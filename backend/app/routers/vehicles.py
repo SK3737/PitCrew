@@ -3,8 +3,10 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.rbac import require_permission
 from app.db.session import get_session
 from app.models.service_history import ServiceHistory
+from app.models.user import User
 from app.repositories.predictions import PredictionRepository
 from app.repositories.service_history import ServiceHistoryRepository
 from app.repositories.vehicles import VehicleRepository
@@ -53,6 +55,7 @@ async def record_service(
     vehicle_id: str = Path(..., description="Vehicle identifier", examples=["V001"]),
     payload: ServiceEventRequest = ...,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_permission("write_service")),
 ) -> ServiceEventRecord:
     vehicle_repo = VehicleRepository(session)
     history_repo = ServiceHistoryRepository(session)
@@ -88,14 +91,21 @@ async def record_service(
 async def get_history(
     vehicle_id: str = Path(..., description="Vehicle identifier", examples=["V001"]),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_permission("read_vehicles", "read_own_vehicles")),
 ) -> VehicleHistoryResponse:
+    vehicle_repo = VehicleRepository(session)
+    vehicle = await vehicle_repo.get(vehicle_id)
+
+    if current_user.role == "owner" and (vehicle is None or vehicle.owner_id != current_user.id):
+        # Owners only ever see their own vehicles - a 403 (not 404) makes the
+        # scoping explicit rather than indistinguishable from "not found".
+        raise HTTPException(status_code=403, detail="Not permitted to view this vehicle")
+
     history_repo = ServiceHistoryRepository(session)
     events = await history_repo.list_for_vehicle(vehicle_id)
     if not events:
         raise HTTPException(status_code=404, detail=f"No history found for vehicle '{vehicle_id}'")
 
-    vehicle_repo = VehicleRepository(session)
-    vehicle = await vehicle_repo.get(vehicle_id)
     meta = VehicleMetadata(
         make=vehicle.make if vehicle else None,
         vehicle_model=vehicle.model if vehicle else None,
@@ -124,6 +134,7 @@ async def predict_for_vehicle(
     payload: VehiclePredictRequest = ...,
     request: Request = ...,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_permission("run_predict")),
 ) -> ServicePredictionResponse:
     history_repo = ServiceHistoryRepository(session)
     last = await history_repo.get_last_for_vehicle(vehicle_id)

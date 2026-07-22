@@ -20,6 +20,7 @@ class VehicleRepository:
         year: int | None = None,
         fuel_type: str | None = None,
         registered_at: date | None = None,
+        owner_id: int | None = None,
     ) -> Vehicle:
         vehicle = Vehicle(
             id=id,
@@ -28,6 +29,7 @@ class VehicleRepository:
             year=year,
             fuel_type=fuel_type,
             registered_at=registered_at,
+            owner_id=owner_id,
         )
         self.session.add(vehicle)
         await self.session.flush()

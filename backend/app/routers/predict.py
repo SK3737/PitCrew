@@ -1,7 +1,9 @@
 from typing import Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 
+from app.auth.rbac import require_permission
+from app.models.user import User
 from app.schemas.service import ServicePredictionRequest, ServicePredictionResponse
 from app.services.predictor import predict
 
@@ -16,6 +18,7 @@ def predict_service(
         "model",
         description="'model' uses the best available ML model; 'rules' uses the deterministic baseline",
     ),
+    current_user: User = Depends(require_permission("run_predict")),
 ) -> ServicePredictionResponse:
     return predict(
         months_driven=payload.months_driven,

@@ -1,5 +1,6 @@
 """Integration test: /vehicles/{id}/predict against Postgres end-to-end."""
 
+import uuid
 from datetime import date
 
 from sqlalchemy import select
@@ -26,11 +27,22 @@ async def _seed_known_vehicle():
         await session.commit()
 
 
+async def _mechanic_headers(async_client) -> dict:
+    email = f"mechanic-{uuid.uuid4()}@example.com"
+    password = "correct horse battery staple"
+    await async_client.post(
+        "/auth/register", json={"email": email, "password": password, "role": "mechanic"}
+    )
+    r = await async_client.post("/auth/login", json={"email": email, "password": password})
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
 async def test_predict_for_known_vehicle_writes_prediction_row(async_client):
     await _seed_known_vehicle()
+    headers = await _mechanic_headers(async_client)
 
     response = await async_client.post(
-        "/vehicles/V001/predict", json={"current_odometer_km": 47200}
+        "/vehicles/V001/predict", json={"current_odometer_km": 47200}, headers=headers
     )
 
     assert response.status_code == 200
@@ -49,8 +61,10 @@ async def test_predict_for_known_vehicle_writes_prediction_row(async_client):
 
 
 async def test_predict_for_unknown_vehicle_returns_404_and_writes_nothing(async_client):
+    headers = await _mechanic_headers(async_client)
+
     response = await async_client.post(
-        "/vehicles/UNKNOWN_XYZ/predict", json={"current_odometer_km": 50000}
+        "/vehicles/UNKNOWN_XYZ/predict", json={"current_odometer_km": 50000}, headers=headers
     )
 
     assert response.status_code == 404
