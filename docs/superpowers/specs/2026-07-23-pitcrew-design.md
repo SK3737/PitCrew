@@ -1,8 +1,11 @@
 # PitCrew - Design Specification
 
-Status: approved (architecture signed off 2026-07-23).
+Status: approved (architecture signed off 2026-07-23, revised after design review same day).
 Owner: SK.
 Goal: turn the existing Vehicle Service Prediction API into a full-stack AI product that reads as senior-level AI/LLM Engineer work on a CV.
+
+Scope of this document: principles and architecture only.
+Phase sequencing lives in `plan.md`, so this spec stays accurate even as phases reorder.
 
 ## 1. Purpose and success criteria
 
@@ -12,23 +15,36 @@ It predicts when each vehicle needs service and lets a user ask a multi-agent as
 This project exists to demonstrate hireable AI-Engineer skills, not to ship a commercial product.
 It succeeds when a reviewer opening the repo can see, without running anything:
 
-- A clean multi-agent architecture with a supervisor and specialists.
+- A clean multi-agent architecture with a LangGraph supervisor and typed specialists.
 - A production-style RAG pipeline with hybrid retrieval, reranking, and citations.
 - Evaluations wired into CI as a regression gate, with scores in the README.
 - Observability with linked traces (a screenshot in the README).
 - Real auth and RBAC, async Postgres, tests, ADRs, and a live demo URL.
 
+Stated CV signals, chosen deliberately (not incidental scope):
+
+- AI/agent engineering is the primary signal: orchestration, RAG, evals, observability.
+- Security awareness is a secondary signal: the auth design (Section 4.2) is kept concrete on purpose.
+
 Hard constraint: no paid LLM or third-party model API is ever called anywhere in the code.
 Every AI feature runs either on a local free model (Ollama) or on recorded traces (replay).
 
-## 2. Users and roles
+## 2. Users, roles, and where the model runs
 
 Four roles, enforced by RBAC:
 
 - admin: full access, manage users and models.
 - mechanic: read all vehicles, create service records, run predictions, use the assistant.
 - owner: read and manage only their own vehicles.
-- demo: read-only, assistant runs in replay mode. This is the role the public demo uses.
+- demo: read-only, assistant answers from replay.
+
+Where the LLM runs depends on environment, not on role:
+
+- Local dev (docker-compose): the assistant runs live on local Ollama for any role. This is where live agent behaviour is developed and recorded.
+- Hosted deployment (the public site): the assistant is replay-only for every role, including admin, because the free host has no GPU and no 8B model, and adding a GPU host would break the free / no-paid-API premise.
+
+So the role called "demo" describes the public site's read-only persona, but live-versus-replay is decided by environment: hosted is always replay; live is a local-dev capability.
+There is no hidden GPU deployment.
 
 ## 3. System shape
 
@@ -45,7 +61,7 @@ pitcrew/
 Data flow for an assistant question:
 
 1. Frontend sends the question over SSE to the backend assistant endpoint.
-2. Supervisor classifies intent and routes to one or more specialists.
+2. The LangGraph supervisor classifies intent and routes to one or more specialists.
 3. A specialist calls tools (predict_service, search_kb, schedule_service) through the pluggable LLMClient.
 4. RAG retrieves and reranks context for knowledge questions.
 5. The backend streams tokens back; the UI renders the answer, inline citations, and the agent activity trace.
@@ -63,11 +79,15 @@ Core tables: users, refresh_tokens, vehicles, service_history, predictions, kb_d
 
 ### 4.2 Auth and RBAC
 
+This subsystem is kept concrete on purpose, as the project's stated security signal.
+
 JWT access token, 15-minute lifetime, sent in the Authorization header.
 Refresh token in an HttpOnly, Secure, SameSite cookie, with rotation and reuse detection backed by a server-side jti store.
 Password hashing with Argon2id via argon2-cffi.
 Do not use passlib or bcrypt, which are unmaintained and silently truncate long passwords.
 Authorization is expressed as require_permission(...) dependencies on routes, not scattered checks.
+
+The rotation-plus-reuse-detection logic is hand-written rather than delegated to an auth library, because it is a small, legible, checkable demonstration of the security understanding the CV claims.
 
 ### 4.3 Prediction service
 
@@ -78,13 +98,20 @@ Regenerate or reweight the dataset so it spans the full life of a service interv
 
 ### 4.4 Agents
 
-A thin, hand-written supervisor routes to three specialists built on PydanticAI:
+Orchestration uses LangGraph; specialists use PydanticAI.
+
+The supervisor is a LangGraph graph that classifies intent and routes to three specialists:
 
 - Diagnostics: predicts next service from history and metadata using the prediction service.
 - Scheduling: proposes and, on explicit confirmation, writes a service booking.
 - Knowledge: answers maintenance questions from the knowledge base via RAG.
 
-The supervisor is deliberately simple code, not a heavy framework, so its routing logic is readable and testable.
+Each specialist is a PydanticAI agent with typed inputs, outputs, and tools.
+
+Decision and tradeoff (resolving the framework tension explicitly):
+A hand-written supervisor would be simpler to read, but the project's goal is to read as senior AI-engineer work, and LangGraph is the most sought-after agent-orchestration signal in 2026 hiring.
+Using LangGraph for the graph and PydanticAI for typed agents shows framework proficiency where reviewers look for it, while keeping the routing logic inspectable in one graph definition.
+The cost is one more framework dependency and its learning curve, accepted deliberately.
 
 Guardrails:
 
@@ -97,14 +124,17 @@ Guardrails:
 All model access goes through one LLMClient interface, so no agent code knows which backend serves it.
 Two implementations:
 
-- OllamaClient: live, local, free. Qwen3-8B (Q4_K_M) for agents, nomic-embed-text for embeddings, bge-reranker-v2-m3 for reranking.
-- ReplayClient: returns recorded responses from cassettes, keyed by a hash of the request. On a cache miss it fails hard rather than calling out.
+- OllamaClient: live, local, free. Qwen3-8B (Q4_K_M) for agents, nomic-embed-text for embeddings, bge-reranker-v2-m3 for reranking. Used in local dev only (see Section 2).
+- ReplayClient: returns recorded responses from cassettes, keyed by a hash of the request. On a cache miss it fails hard rather than calling out. This is what the hosted deployment uses.
 
 Cassettes follow the VCR.py pattern, recorded at temperature 0 with a fixed seed.
 Two layers: hash-keyed cassettes for CI determinism, and a handful of curated golden-scenario cassettes for the public demo.
 DEMO_MODE selects ReplayClient; local dev uses OllamaClient.
 
 ### 4.6 RAG
+
+Corpus: a curated synthetic maintenance knowledge base, authored as markdown from publicly-known manufacturer service-interval norms.
+It covers per-make/model service schedules (oil, filter, brake, coolant intervals) and common maintenance issues, enough to give the Knowledge agent real, citable content without redistributing any copyrighted manual.
 
 Hybrid retrieval: pgvector dense ANN search plus Postgres tsvector BM25, fused with Reciprocal Rank Fusion.
 Retrieve roughly the top 20, rerank with the cross-encoder to the top 4 to 6.
@@ -114,12 +144,18 @@ On weak retrieval the Knowledge agent refuses rather than inventing an answer.
 ### 4.7 Evaluations
 
 Evals are the headline signal, not an afterthought.
-`make eval` runs Ragas metrics (faithfulness, answer relevancy, context precision, context recall) with a local Ollama judge, plus DeepEval trajectory tests for the agents.
+`make eval` runs two complementary suites, kept separate because they measure different things:
+
+- Ragas (with a local Ollama judge) scores retrieval and answer quality: faithfulness, answer relevancy, context precision, context recall.
+- DeepEval scores agent trajectory and tool-selection correctness, which Ragas does not cover.
+
 CI runs `make eval` as a regression gate and the README shows current scores.
 
 ### 4.8 Observability
 
-Langfuse (self-hosted, MIT) traces every agent run.
+Langfuse Cloud (free tier) traces every agent run.
+The cloud tier is chosen over self-hosting so no observability service has to be persisted in production, which keeps the infra ceiling intact.
+Langfuse is an observability SaaS, not a model, so it does not touch the no-paid-LLM constraint.
 A run_id links the UI, the backend logs, and the Langfuse trace.
 The README includes an annotated trace screenshot.
 
@@ -127,6 +163,12 @@ The README includes an annotated trace screenshot.
 
 Server-Sent Events via FastAPI StreamingResponse.
 The frontend consumes it through a Next.js Route Handler that returns a ReadableStream, read on the client with fetch and getReader, not EventSource.
+
+### 4.10 Testing
+
+Backend: pytest with httpx AsyncClient for unit and integration tests against the async app, plus a Postgres test database.
+Frontend: Playwright for end-to-end tests against a production build (auth flow, dashboard, assistant streaming).
+The eval suites (Section 4.7) are a third, separate gate, not a substitute for these.
 
 ## 5. Frontend
 
@@ -142,36 +184,22 @@ proxy.ts / middleware is optimistic redirect only, never the authorization bound
 ## 6. Deployment
 
 - Database: Neon Postgres with pgvector. Chosen because its free tier does not expire and resumes from scale-to-zero in about a second.
-- Backend: Render free web service, running in DEMO_MODE (ReplayClient), so the public demo needs no GPU and no paid API.
+- Backend: Render free web service, running in DEMO_MODE (ReplayClient), so the public demo needs no GPU and no paid API. Live Ollama is never deployed here; it runs only in local dev (Section 2).
 - Frontend: Vercel Hobby.
+- Observability: Langfuse Cloud free tier (no self-hosted service).
 - CI/CD: GitHub Actions. Public repo. Conventional Commits.
-- A keep-warm ping hits a DB-backed endpoint to reduce cold starts.
+- Cold-start mitigation: a scheduled ping keeps the Render backend warm. This targets Render's container cold start, not Neon, whose sub-second resume needs no keep-warm.
 
 ## 7. Documentation
 
 README with overview, architecture diagram, live link, eval scores, trace screenshot, and setup.
-ADRs for the significant decisions (auth design, agent framework choice, RAG design, deploy stack).
+ADRs for the significant decisions (auth design, LangGraph-plus-PydanticAI agent choice, RAG design, deploy stack, live-versus-replay model strategy).
 A short case study describing the problem, the design, and the tradeoffs.
 
 ## 8. Explicit non-goals
 
 - No paid LLM API calls, ever.
+- No GPU or self-hosted model in the hosted deployment; live inference is local-dev only.
 - No full MLOps platform: no Kubernetes, Terraform, MLflow, or microservices. docker-compose plus managed hosts is the ceiling.
+- No self-hosted observability stack; Langfuse Cloud free tier only.
 - No end-user billing, teams, or multi-tenancy beyond the four roles.
-- LangGraph is an optional stretch only, not part of the core.
-
-## 9. Build order
-
-Phases, each a shippable slice with tests:
-
-0. Repo hygiene and monorepo layout (remove committed virtualenv, set up backend/ and frontend/, docker-compose).
-1. Postgres migration (schema, async stack, Alembic, move data off JSON).
-2. Auth and RBAC.
-3. Data-bias fix and model registry.
-4. Next.js scaffold and Dashboard.
-5. Agent core (supervisor, specialists, LLMClient, guardrails).
-6. RAG (ingest, hybrid retrieval, rerank, citations).
-7. Replay and DEMO_MODE (cassettes, golden scenarios).
-8. Assistant UI (SSE streaming, citations, trace panel).
-9. CI/CD and deploy (GitHub Actions, Neon, Render, Vercel, evals in CI).
-10. Docs, ADRs, and case study.
