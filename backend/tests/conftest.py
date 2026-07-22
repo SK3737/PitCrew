@@ -24,10 +24,12 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 
 import app.models  # noqa: F401 - registers all ORM models on Base.metadata
 from app.db.base import Base
 from app.db.session import async_session_factory, engine
+from app.main import app
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -43,3 +45,12 @@ async def _clean_database():
 async def db_session():
     async with async_session_factory() as session:
         yield session
+
+
+@pytest_asyncio.fixture
+async def async_client():
+    """httpx.AsyncClient wired directly to the app via ASGI transport (in-process, no server)."""
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client

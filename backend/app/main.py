@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,6 +10,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+from app.db.session import engine
 from app.routers import predict, vehicles
 from app.services.predictor import MODEL_V1_PATH, MODEL_V2_PATH, load_model
 
@@ -38,11 +40,19 @@ app.include_router(vehicles.router)
 
 
 @app.get("/health", tags=["meta"])
-def health() -> dict:
+async def health() -> dict:
+    db_ok = True
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+
     return {
-        "status": "ok",
+        "status": "ok" if db_ok else "degraded",
         "model_v1_loaded": getattr(app.state, "model_v1", None) is not None,
         "model_v2_loaded": getattr(app.state, "model_v2", None) is not None,
+        "db_ok": db_ok,
     }
 
 
