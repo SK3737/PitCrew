@@ -13,16 +13,16 @@
   "candidates": {
     "LinearRegression": {
       "metrics": {
-        "days_until_service": 2.09,
-        "kms_until_service": 122.31,
-        "mean_mae": 62.2
+        "days_until_service": 39.56,
+        "kms_until_service": 2216.77,
+        "mean_mae": 1128.16
       }
     },
     "DecisionTreeRegressor": {
       "metrics": {
-        "days_until_service": 1.97,
-        "kms_until_service": 111.84,
-        "mean_mae": 56.91
+        "days_until_service": 27.82,
+        "kms_until_service": 1690.08,
+        "mean_mae": 858.95
       }
     }
   }

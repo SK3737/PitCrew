@@ -23,7 +23,10 @@ def predict_rules(months_driven: float, kms_driven: float) -> ServicePredictionR
     if days_to_time_trigger <= days_to_km_trigger:
         earlier_trigger: str = "time"
         days_until = days_to_time_trigger
-        kms_until = km_per_month * months_remaining
+        # With no driving history yet (km_per_month == 0, e.g. a brand-new or
+        # just-serviced vehicle), there is no rate to project forward from -
+        # report the full remaining km budget instead of an extrapolated 0.
+        kms_until = km_per_month * months_remaining if km_per_month > 0 else kms_remaining
     else:
         earlier_trigger = "km"
         days_until = days_to_km_trigger

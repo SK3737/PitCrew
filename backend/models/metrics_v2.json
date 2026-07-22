@@ -19,16 +19,16 @@
   "candidates": {
     "DecisionTreeRegressor": {
       "metrics": {
-        "days_until_service": 16.47,
-        "kms_until_service": 959.07,
-        "mean_mae": 487.77
+        "days_until_service": 17.37,
+        "kms_until_service": 1056.08,
+        "mean_mae": 536.72
       }
     },
     "RandomForestRegressor": {
       "metrics": {
-        "days_until_service": 12.8,
-        "kms_until_service": 693.46,
-        "mean_mae": 353.13
+        "days_until_service": 13.16,
+        "kms_until_service": 728.92,
+        "mean_mae": 371.04
       }
     }
   }
