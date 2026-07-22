@@ -13,6 +13,10 @@ alembic
 pydantic-settings
 pgvector
 
+# Auth (JWT + Argon2id hashing)
+argon2-cffi
+pyjwt
+
 # Testing
 pytest
 pytest-asyncio
