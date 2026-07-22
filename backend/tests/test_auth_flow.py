@@ -115,6 +115,27 @@ async def test_refresh_rotates_token_and_rejects_reuse_of_the_old_one(async_clie
     assert also_rejected.status_code == 401
 
 
+async def test_refresh_token_is_rejected_when_used_as_a_bearer_access_token(async_client):
+    """
+    A refresh token is meant only to mint new access tokens via /auth/refresh.
+    If it is instead presented directly as a Bearer access token, it must be
+    rejected - otherwise a long-lived (14-day) refresh token would work as a
+    fully valid access credential carrying the user's real role, defeating
+    the point of having a short-lived access token at all.
+    """
+    await _provision_and_login(async_client, "mechanic")
+    refresh_token = async_client.cookies.get("refresh_token")
+    assert refresh_token is not None
+
+    r = await async_client.post(
+        "/predict",
+        json={"months_driven": 5, "total_kms_driven": 7200},
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    )
+
+    assert r.status_code == 401
+
+
 async def test_logout_revokes_the_refresh_token(async_client):
     await _provision_and_login(async_client, "mechanic")
 

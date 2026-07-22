@@ -28,6 +28,15 @@ async def get_current_user(
     except jwt.PyJWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
+    if claims.get("type") != "access":
+        # Belt-and-braces: a refresh token (type "refresh") or any token
+        # missing the claim entirely must never be trusted as an access
+        # credential, even though it carries a valid signature and a real
+        # user id in "sub". Mirrors the refresh-side check in
+        # rotate_refresh_token that rejects an access token used as a
+        # refresh token.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
     user_repo = UserRepository(session)
     user = await user_repo.get_by_id(int(claims["sub"]))
     if user is None:
