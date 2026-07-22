@@ -49,8 +49,21 @@ def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/auth")
 
 
+SELF_SERVE_ROLES = frozenset({"owner", "demo"})
+
+
 @router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest, session: AsyncSession = Depends(get_session)) -> UserPublic:
+    if payload.role not in SELF_SERVE_ROLES:
+        # Public self-registration must never be able to grant elevated
+        # roles - "admin" and "mechanic" accounts are provisioned out of
+        # band (e.g. directly in the database, or a future admin-only
+        # endpoint), never by an unauthenticated caller choosing their own role.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Self-registration is only permitted for roles: {sorted(SELF_SERVE_ROLES)}",
+        )
+
     user_repo = UserRepository(session)
     if await user_repo.get_by_email(payload.email) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")

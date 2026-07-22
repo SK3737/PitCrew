@@ -3,9 +3,13 @@
 import uuid
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import create_user_directly
+
+PASSWORD = "correct horse battery staple"
 
 
 @pytest.fixture(scope="session")
@@ -15,18 +19,19 @@ def client():
         yield c
 
 
-@pytest.fixture
-def auth_headers(client):
-    """Register + log in a fresh mechanic user, returning bearer auth headers.
+@pytest_asyncio.fixture
+async def auth_headers(client):
+    """Provision + log in a fresh mechanic user, returning bearer auth headers.
 
     Mechanic is used (rather than admin) because it holds every permission
     these existing predict/vehicle routes require, without granting the
     all-permissions admin escape hatch - a more meaningful guard-rail check.
+    Provisioned directly (not via POST /auth/register, which only allows
+    self-serve "owner"/"demo" roles).
     """
     email = f"mechanic-{uuid.uuid4()}@example.com"
-    password = "correct horse battery staple"
-    client.post("/auth/register", json={"email": email, "password": password, "role": "mechanic"})
-    r = client.post("/auth/login", json={"email": email, "password": password})
+    await create_user_directly(email, PASSWORD, role="mechanic")
+    r = client.post("/auth/login", json={"email": email, "password": PASSWORD})
     token = r.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 

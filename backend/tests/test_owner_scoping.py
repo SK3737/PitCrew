@@ -14,15 +14,23 @@ from datetime import date
 from app.db.session import async_session_factory
 from app.repositories.service_history import ServiceHistoryRepository
 from app.repositories.vehicles import VehicleRepository
+from tests.conftest import create_user_directly
 
 PASSWORD = "correct horse battery staple"
+SELF_SERVE_ROLES = frozenset({"owner", "demo"})
 
 
 async def _register_and_login(async_client, role: str) -> tuple[int, dict]:
     email = f"{role}-{uuid.uuid4()}@example.com"
-    await async_client.post(
-        "/auth/register", json={"email": email, "password": PASSWORD, "role": role}
-    )
+    if role in SELF_SERVE_ROLES:
+        await async_client.post(
+            "/auth/register", json={"email": email, "password": PASSWORD, "role": role}
+        )
+    else:
+        # POST /auth/register deliberately refuses to self-grant privileged
+        # roles (e.g. "mechanic") - provision those directly instead.
+        await create_user_directly(email, PASSWORD, role=role)
+
     login = await async_client.post("/auth/login", json={"email": email, "password": PASSWORD})
     access_token = login.json()["access_token"]
 

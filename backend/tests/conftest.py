@@ -28,9 +28,11 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 import app.models  # noqa: F401 - registers all ORM models on Base.metadata
+from app.auth.hashing import hash_password
 from app.db.base import Base
 from app.db.session import async_session_factory, engine
 from app.main import app
+from app.repositories.users import UserRepository
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -46,6 +48,23 @@ async def _clean_database():
 async def db_session():
     async with async_session_factory() as session:
         yield session
+
+
+async def create_user_directly(email: str, password: str, role: str) -> None:
+    """
+    Provision a user by writing straight to the repository, bypassing
+    ``POST /auth/register``.
+
+    Self-registration deliberately only permits the "owner"/"demo" roles
+    (see ``app.routers.auth.SELF_SERVE_ROLES``) - "mechanic" and "admin"
+    accounts are provisioned out of band in real deployments, so tests that
+    need one create it the same way rather than going through the
+    (intentionally role-restricted) public endpoint.
+    """
+    async with async_session_factory() as session:
+        user_repo = UserRepository(session)
+        await user_repo.create(email=email, hashed_password=hash_password(password), role=role)
+        await session.commit()
 
 
 @pytest_asyncio.fixture

@@ -9,6 +9,9 @@ from app.db.session import async_session_factory
 from app.models.prediction import Prediction
 from app.repositories.service_history import ServiceHistoryRepository
 from app.repositories.vehicles import VehicleRepository
+from tests.conftest import create_user_directly
+
+PASSWORD = "correct horse battery staple"
 
 
 async def _seed_known_vehicle():
@@ -29,11 +32,8 @@ async def _seed_known_vehicle():
 
 async def _mechanic_headers(async_client) -> dict:
     email = f"mechanic-{uuid.uuid4()}@example.com"
-    password = "correct horse battery staple"
-    await async_client.post(
-        "/auth/register", json={"email": email, "password": password, "role": "mechanic"}
-    )
-    r = await async_client.post("/auth/login", json={"email": email, "password": password})
+    await create_user_directly(email, PASSWORD, role="mechanic")
+    r = await async_client.post("/auth/login", json={"email": email, "password": PASSWORD})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
