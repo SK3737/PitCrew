@@ -1,7 +1,7 @@
 from datetime import date
 
 from sqlalchemy import Date, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -23,3 +23,10 @@ class Vehicle(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fuel_type: Mapped[str | None] = mapped_column(String, nullable=True)
     registered_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    service_history: Mapped[list["ServiceHistory"]] = relationship(  # noqa: F821
+        "ServiceHistory", back_populates="vehicle", cascade="all, delete-orphan"
+    )
+    predictions: Mapped[list["Prediction"]] = relationship(  # noqa: F821
+        "Prediction", back_populates="vehicle", cascade="all, delete-orphan"
+    )
