@@ -2,4 +2,14 @@ ideas.md
 skills-lock.json
 skills.json
 myenv
+myenv/
+.venv/
 data/README.md
+__pycache__/
+*.pyc
+.env
+node_modules/
+.next/
+frontend/out/
+.pytest_cache/
+cassettes/*.local
