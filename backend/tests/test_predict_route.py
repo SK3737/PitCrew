@@ -6,7 +6,6 @@ from sqlalchemy import select
 
 from app.db.session import async_session_factory
 from app.models.prediction import Prediction
-from app.models.vehicle import Vehicle
 from app.repositories.service_history import ServiceHistoryRepository
 from app.repositories.vehicles import VehicleRepository
 

@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Optional
 
 import joblib
-import numpy as np
 import pandas as pd
 
 from app.schemas.service import ServicePredictionResponse
@@ -19,8 +18,11 @@ from app.services.rules import predict_rules
 
 logger = logging.getLogger(__name__)
 
-MODEL_V1_PATH = Path("models/service_predictor.pkl")
-MODEL_V2_PATH = Path("models/service_predictor_v2.pkl")
+# Resolved relative to the backend/ package root, not the process cwd, so
+# model loading works regardless of where pytest/uvicorn is invoked from.
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+MODEL_V1_PATH = _BACKEND_ROOT / "models" / "service_predictor.pkl"
+MODEL_V2_PATH = _BACKEND_ROOT / "models" / "service_predictor_v2.pkl"
 
 V2_NUMERIC_FEATURES     = ["months_driven", "total_kms_driven", "year"]
 V2_CATEGORICAL_FEATURES = ["make", "fuel_type", "last_service_type"]

@@ -1,10 +1,8 @@
 """Unit tests for the deterministic rules predictor."""
 
-from datetime import date, timedelta
+from datetime import date
 
-import pytest
-
-from app.services.rules import TIME_THRESHOLD_MONTHS, KM_THRESHOLD, predict_rules
+from app.services.rules import TIME_THRESHOLD_MONTHS, predict_rules
 
 
 def test_time_triggers_for_light_driver():

@@ -14,13 +14,14 @@ test:
 eval:
 	@echo "TODO: wire eval suite (later phase)"
 
-# Run Alembic migrations against the compose DB. Wired up in a later phase.
+# Run Alembic migrations against the compose DB.
 migrate:
-	@echo "TODO: wire Alembic migrations (later phase)"
+	cd backend && python -m alembic upgrade head
 
-# Seed local Postgres with demo data. Wired up in a later phase.
+# Seed local Postgres with the legacy JSON demo data (one-time; refuses to
+# run if vehicles already exist - pass FORCE=1 to import anyway).
 seed:
-	@echo "TODO: wire DB seeding (later phase)"
+	cd backend && python -m scripts.import_json $(if $(FORCE),--force,)
 
 # Lint the backend with ruff.
 lint:

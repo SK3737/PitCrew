@@ -4,15 +4,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from app.db.session import engine
+from app.routers import predict, vehicles
+from app.services.predictor import MODEL_V1_PATH, MODEL_V2_PATH, load_model
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-
-from app.db.session import engine
-from app.routers import predict, vehicles
-from app.services.predictor import MODEL_V1_PATH, MODEL_V2_PATH, load_model
 
 
 @asynccontextmanager

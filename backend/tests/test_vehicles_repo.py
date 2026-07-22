@@ -2,8 +2,6 @@
 
 from datetime import date
 
-import pytest
-
 from app.repositories.vehicles import VehicleRepository
 
 
