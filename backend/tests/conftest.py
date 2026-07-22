@@ -50,8 +50,15 @@ async def db_session():
 
 @pytest_asyncio.fixture
 async def async_client():
-    """httpx.AsyncClient wired directly to the app via ASGI transport (in-process, no server)."""
+    """
+    httpx.AsyncClient wired directly to the app via ASGI transport (in-process, no server).
+
+    base_url uses https:// (not http://) because the refresh-token cookie is
+    marked Secure - httpx's cookie jar (correctly) withholds Secure cookies
+    from being resent over a plain http:// base_url, which would silently
+    break any test exercising the refresh-cookie flow.
+    """
     async with app.router.lifespan_context(app):
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="https://test") as client:
             yield client
