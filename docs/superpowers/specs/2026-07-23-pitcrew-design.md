@@ -26,8 +26,10 @@ Stated CV signals, chosen deliberately (not incidental scope):
 - AI/agent engineering is the primary signal: orchestration, RAG, evals, observability.
 - Security awareness is a secondary signal: the auth design (Section 4.2) is kept concrete on purpose.
 
-Hard constraint: no paid LLM or third-party model API is ever called anywhere in the code.
-Every AI feature runs either on a local free model (Ollama) or on recorded traces (replay).
+Hard constraint: no paid LLM API (Anthropic or otherwise) is ever called anywhere in the code, because this is a demo project, not a revenue product.
+Live chat completion uses a free-tier third-party inference API (Groq), chosen deliberately because it costs nothing and needs no local GPU, so the hosted demo can be genuinely live rather than replay-only.
+Embeddings and reranking run locally on CPU, so RAG never depends on any metered service either.
+Tests run against recorded traces (replay) so CI never depends on Groq's uptime or burns its free-tier quota.
 
 ## 2. Users, roles, and where the model runs
 
@@ -38,13 +40,10 @@ Four roles, enforced by RBAC:
 - owner: read and manage only their own vehicles.
 - demo: read-only, assistant answers from replay.
 
-Where the LLM runs depends on environment, not on role:
-
-- Local dev (docker-compose): the assistant runs live on local Ollama for any role. This is where live agent behaviour is developed and recorded.
-- Hosted deployment (the public site): the assistant is replay-only for every role, including admin, because the free host has no GPU and no 8B model, and adding a GPU host would break the free / no-paid-API premise.
-
-So the role called "demo" describes the public site's read-only persona, but live-versus-replay is decided by environment: hosted is always replay; live is a local-dev capability.
-There is no hidden GPU deployment.
+The assistant runs live on the free Groq API in every environment, local dev and hosted alike, so there is no live-versus-replay split by environment.
+The "demo" role still describes the public site's read-only persona; it just means read-only, not "replay-only," since Groq makes a real live assistant free to host.
+Replay is a testing concern, not a deployment mode: CI runs the whole suite against `ReplayClient` so tests are deterministic and never touch Groq or its rate limits.
+There is no GPU anywhere in this system, hosted or local.
 
 ## 3. System shape
 
@@ -117,24 +116,28 @@ Guardrails:
 
 - Scheduling writes require human-in-the-loop confirmation before any state change.
 - A max-iteration kill switch bounds agent loops.
+- A Groq rate-limit (429) response is caught and surfaced as a friendly "assistant is busy, try again shortly" message, never a crash or a silent retry storm.
 - These map to OWASP LLM Top-10, notably LLM06 Excessive Agency.
 
 ### 4.5 Pluggable LLMClient
 
-All model access goes through one LLMClient interface, so no agent code knows which backend serves it.
+All chat/reasoning calls go through one LLMClient interface, so no agent code knows which backend serves it.
 Two implementations:
 
-- OllamaClient: live, local, free. Qwen3-8B (Q4_K_M) for agents, nomic-embed-text for embeddings, bge-reranker-v2-m3 for reranking. Used in local dev only (see Section 2).
-- ReplayClient: returns recorded responses from cassettes, keyed by a hash of the request. On a cache miss it fails hard rather than calling out. This is what the hosted deployment uses.
+- GroqClient: live, free-tier, used in every environment (local dev and hosted). Calls Groq's OpenAI-compatible chat completions API with `llama-3.3-70b-versatile`.
+- ReplayClient: returns recorded responses from cassettes, keyed by a hash of the request. On a cache miss it fails hard rather than calling out. Used by the test suite (`LLM_BACKEND=replay`) so CI is deterministic and never touches Groq.
 
 Cassettes follow the VCR.py pattern, recorded at temperature 0 with a fixed seed.
-Two layers: hash-keyed cassettes for CI determinism, and a handful of curated golden-scenario cassettes for the public demo.
-DEMO_MODE selects ReplayClient; local dev uses OllamaClient.
+`LLM_BACKEND=groq` for live use (dev and hosted); `LLM_BACKEND=replay` for tests.
+
+Embeddings and reranking are not part of this live/replay split: they run locally on CPU (Section 4.6) in every environment, since they are free and light enough to need no API at all.
 
 ### 4.6 RAG
 
 Corpus: a curated synthetic maintenance knowledge base, authored as markdown from publicly-known manufacturer service-interval norms.
 It covers per-make/model service schedules (oil, filter, brake, coolant intervals) and common maintenance issues, enough to give the Knowledge agent real, citable content without redistributing any copyrighted manual.
+
+Embeddings use a local CPU sentence-transformer (`all-MiniLM-L6-v2`); reranking uses a local CPU cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`). Both run in-process, no API and no GPU.
 
 Hybrid retrieval: pgvector dense ANN search plus Postgres tsvector BM25, fused with Reciprocal Rank Fusion.
 Retrieve roughly the top 20, rerank with the cross-encoder to the top 4 to 6.
@@ -146,7 +149,7 @@ On weak retrieval the Knowledge agent refuses rather than inventing an answer.
 Evals are the headline signal, not an afterthought.
 `make eval` runs two complementary suites, kept separate because they measure different things:
 
-- Ragas (with a local Ollama judge) scores retrieval and answer quality: faithfulness, answer relevancy, context precision, context recall.
+- Ragas (with GroqClient as the judge, free tier) scores retrieval and answer quality: faithfulness, answer relevancy, context precision, context recall.
 - DeepEval scores agent trajectory and tool-selection correctness, which Ragas does not cover.
 
 CI runs `make eval` as a regression gate and the README shows current scores.
@@ -184,7 +187,7 @@ proxy.ts / middleware is optimistic redirect only, never the authorization bound
 ## 6. Deployment
 
 - Database: Neon Postgres with pgvector. Chosen because its free tier does not expire and resumes from scale-to-zero in about a second.
-- Backend: Render free web service, running in DEMO_MODE (ReplayClient), so the public demo needs no GPU and no paid API. Live Ollama is never deployed here; it runs only in local dev (Section 2).
+- Backend: Render free web service, running `LLM_BACKEND=groq`, so the public demo is genuinely live with no GPU and no paid API. `GROQ_API_KEY` is a Render secret.
 - Frontend: Vercel Hobby.
 - Observability: Langfuse Cloud free tier (no self-hosted service).
 - CI/CD: GitHub Actions. Public repo. Conventional Commits.
@@ -199,7 +202,7 @@ A short case study describing the problem, the design, and the tradeoffs.
 ## 8. Explicit non-goals
 
 - No paid LLM API calls, ever.
-- No GPU or self-hosted model in the hosted deployment; live inference is local-dev only.
+- No GPU anywhere; live inference is a free third-party API (Groq), not a self-hosted model.
 - No full MLOps platform: no Kubernetes, Terraform, MLflow, or microservices. docker-compose plus managed hosts is the ceiling.
 - No self-hosted observability stack; Langfuse Cloud free tier only.
 - No end-user billing, teams, or multi-tenancy beyond the four roles.

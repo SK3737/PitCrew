@@ -4,9 +4,9 @@
 
 **Goal:** Rebuild the existing Vehicle Service Prediction API into PitCrew, a full-stack fleet-maintenance copilot with a LangGraph multi-agent assistant, RAG, auth/RBAC, a Next.js dashboard, evals-in-CI, and a free live demo.
 
-**Architecture:** Monorepo (`backend/` FastAPI + `frontend/` Next.js). Async Postgres+pgvector. LangGraph supervisor routing to PydanticAI specialists (Diagnostics, Scheduling, Knowledge/RAG). All model access behind a pluggable `LLMClient` with an Ollama backend (local dev, live) and a Replay backend (hosted demo, recorded cassettes) so no paid LLM API is ever called. Langfuse Cloud for tracing.
+**Architecture:** Monorepo (`backend/` FastAPI + `frontend/` Next.js). Async Postgres+pgvector. LangGraph supervisor routing to PydanticAI specialists (Diagnostics, Scheduling, Knowledge/RAG). All chat/reasoning goes through a pluggable `LLMClient` with a `GroqClient` backend (free-tier, live in every environment) and a `ReplayClient` backend (recorded cassettes, used by the test suite so CI is deterministic) so no paid LLM API is ever called. Embeddings and reranking run locally on CPU (no API, no GPU). Langfuse Cloud for tracing.
 
-**Tech Stack:** FastAPI, SQLAlchemy 2.0 async, asyncpg, Alembic, pgvector, argon2-cffi, PyJWT, LangGraph, PydanticAI, Ollama (Qwen3-8B / nomic-embed-text / bge-reranker-v2-m3), Ragas, DeepEval, Langfuse; Next.js 16 + TypeScript + Tailwind + shadcn/ui; pytest + httpx, Playwright; Neon + Render + Vercel; GitHub Actions.
+**Tech Stack:** FastAPI, SQLAlchemy 2.0 async, asyncpg, Alembic, pgvector, argon2-cffi, PyJWT, LangGraph, PydanticAI, Groq (`llama-3.3-70b-versatile`, free tier), sentence-transformers (`all-MiniLM-L6-v2`) for embeddings, cross-encoder (`ms-marco-MiniLM-L-6-v2`) for rerank, Ragas, DeepEval, Langfuse; Next.js 16 + TypeScript + Tailwind + shadcn/ui; pytest + httpx, Playwright; Neon + Render + Vercel; GitHub Actions.
 
 **Authoritative spec:** `docs/superpowers/specs/2026-07-23-pitcrew-design.md`. If this plan and the spec disagree, the spec wins - stop and reconcile.
 
@@ -17,7 +17,7 @@
 - Execute phases **in order**; each phase is a shippable, tested slice. Do not start a phase until the prior phase's acceptance gate passes.
 - Within a phase, follow **strict TDD**: write the failing test, run it (confirm it fails), write minimal code, run it (confirm it passes), commit. One logical change per commit.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`). No em dashes anywhere. Never add an agent as co-author.
-- **Never** call a paid LLM API. All live inference goes through `OllamaClient`; the hosted demo uses `ReplayClient`. A replay cache miss must raise, never fall back to a network call.
+- **Never** call a paid LLM API. All live chat/reasoning goes through `GroqClient` (free tier, used in dev and hosted alike); the test suite runs on `ReplayClient`. A replay cache miss must raise, never fall back to a network call.
 - **Do not push to origin directly.** Use `/no-mistakes` (or `git push no-mistakes`) when a phase is ready to ship.
 - When a phase says "verify," actually run the command and read the output before ticking the box. Evidence before claims.
 - If a step is blocked or reality differs from the plan, stop and report; do not invent a workaround that contradicts the spec.
@@ -37,14 +37,14 @@
     routers/              thin HTTP layer
     services/             business logic (predictor, registry)
     auth/                 hashing, tokens, deps, rbac
-    agents/               llm_client, supervisor (LangGraph), specialists (PydanticAI), tools
+    agents/               llm_client, embeddings, supervisor (LangGraph), specialists (PydanticAI), tools
     rag/                  ingest, retrieval, rerank
     evals/                ragas + deepeval suites
     observability/        langfuse setup, run_id
   alembic/                migrations
   tests/                  mirrors app/ layout
   ```
-- **Env vars (`backend/.env.example` must list all):** `DATABASE_URL`, `JWT_SECRET`, `ACCESS_TOKEN_MINUTES=15`, `REFRESH_TOKEN_DAYS=14`, `LLM_BACKEND=ollama|replay`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL=qwen3:8b`, `EMBED_MODEL=nomic-embed-text`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`, `CASSETTE_DIR`.
+- **Env vars (`backend/.env.example` must list all):** `DATABASE_URL`, `JWT_SECRET`, `ACCESS_TOKEN_MINUTES=15`, `REFRESH_TOKEN_DAYS=14`, `LLM_BACKEND=groq|replay`, `GROQ_API_KEY`, `GROQ_MODEL=llama-3.3-70b-versatile`, `EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2`, `RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`, `CASSETTE_DIR`.
 - **Test DB:** a separate Postgres database; tests never touch dev data. Use a `pytest` fixture that creates a transactional session rolled back per test.
 - **Frontend layout (inside `frontend/`):** Next.js App Router, `app/`, `components/ui/` (shadcn), `lib/` (data-access layer, api client, session), `app/api/` route handlers (BFF that forwards cookies to FastAPI).
 
@@ -52,7 +52,7 @@
 
 ## Phase 0: Repo hygiene and monorepo layout
 
-**Goal:** A clean monorepo skeleton with the committed virtualenv removed and local infra running via docker-compose.
+**Goal:** A clean monorepo skeleton with the committed virtualenv removed and local Postgres+pgvector running via docker-compose. No GPU or model-server container is needed anywhere in this project.
 
 **Dependencies:** none.
 
@@ -67,12 +67,12 @@
 - [ ] **0.2 Add `.gitignore`.** Include `myenv/`, `.venv/`, `__pycache__/`, `*.pyc`, `.env`, `node_modules/`, `.next/`, `frontend/out/`, `*.pkl` only if regenerated (keep existing model pkls tracked for now), `.pytest_cache/`, `cassettes/*.local`.
 - [ ] **0.3 Untrack the virtualenv.** Run `git rm -r --cached myenv` then commit `chore: remove committed virtualenv from tracking`.
 - [ ] **0.4 Create monorepo dirs.** `mkdir -p backend frontend`. Move backend source: `git mv app backend/app`, `git mv models backend/models`, `git mv storage backend/storage`, `git mv services backend/services` (if present at root), `git mv data backend/data`. Update imports if any break.
-- [ ] **0.5 Add `docker-compose.yml`** with services: `db` (image `pgvector/pgvector:pg16`, env POSTGRES_USER/PASSWORD/DB, volume, port 5432), `ollama` (image `ollama/ollama`, volume, port 11434), and placeholders for `backend`/`frontend` (build contexts, `depends_on: db`). Ollama and db must have named volumes so data persists.
+- [ ] **0.5 Add `docker-compose.yml`** with a `db` service (image `pgvector/pgvector:pg16`, env POSTGRES_USER/PASSWORD/DB, named volume, port 5432) and placeholders for `backend`/`frontend` (build contexts, `depends_on: db`).
 - [ ] **0.6 Add `Makefile`** targets (stubs that will fill in over later phases): `dev`, `test`, `eval`, `migrate`, `seed`, `lint`, `fmt`. For now `lint` runs `ruff check backend`, `fmt` runs `ruff format backend`.
-- [ ] **0.7 Verify.** Run `docker compose up -d db ollama`; confirm both containers healthy (`docker compose ps`). Run `docker compose exec db psql -U <user> -d <db> -c "CREATE EXTENSION IF NOT EXISTS vector;"` and confirm no error.
+- [ ] **0.7 Verify.** Run `docker compose up -d db`; confirm the container is healthy (`docker compose ps`). Run `docker compose exec db psql -U <user> -d <db> -c "CREATE EXTENSION IF NOT EXISTS vector;"` and confirm no error.
 - [ ] **0.8 Commit** `chore: establish monorepo layout and local infra`.
 
-**Acceptance gate:** `myenv/` no longer tracked (`git ls-files | grep myenv` returns nothing); `docker compose ps` shows db + ollama running; pgvector extension creatable.
+**Acceptance gate:** `myenv/` no longer tracked (`git ls-files | grep myenv` returns nothing); `docker compose ps` shows db running; pgvector extension creatable.
 
 ---
 
@@ -180,27 +180,27 @@
 
 ## Phase 5: Agent core (LangGraph supervisor + PydanticAI specialists + LLMClient)
 
-**Goal:** A working supervisor graph that routes to Diagnostics/Scheduling/Knowledge specialists, all model calls behind `LLMClient`, with guardrails - running live on local Ollama.
+**Goal:** A working supervisor graph that routes to Diagnostics/Scheduling/Knowledge specialists, all chat/reasoning behind `LLMClient`, with guardrails - running live on the free Groq API in every environment.
 
 **Dependencies:** Phases 1-3 (tools need the DB + predictor). RAG (Phase 6) fills in the Knowledge specialist's retrieval; here it can return a stub "no KB yet."
 
 **Files:**
-- Create: `backend/app/agents/llm_client.py` (interface + `OllamaClient` + `ReplayClient`), `backend/app/agents/tools.py`, `backend/app/agents/specialists/{diagnostics,scheduling,knowledge}.py`, `backend/app/agents/supervisor.py` (LangGraph), `backend/app/agents/guardrails.py`, `backend/app/routers/assistant.py`
+- Create: `backend/app/agents/llm_client.py` (interface + `GroqClient` + `ReplayClient`), `backend/app/agents/tools.py`, `backend/app/agents/specialists/{diagnostics,scheduling,knowledge}.py`, `backend/app/agents/supervisor.py` (LangGraph), `backend/app/agents/guardrails.py`, `backend/app/routers/assistant.py`
 - Create: `backend/tests/test_llm_client.py`, `backend/tests/test_supervisor_routing.py`, `backend/tests/test_guardrails.py`
 
 **Tasks:**
 
-- [ ] **5.1 Deps.** Add `langgraph`, `pydantic-ai`, `ollama` (client), `langfuse`. Install. Pull models: `ollama pull qwen3:8b`, `ollama pull nomic-embed-text`.
-- [ ] **5.2 TDD the LLMClient interface.** `test_llm_client.py`: define an abstract `LLMClient` with `complete(messages, tools, **params)` and `embed(texts)`. Test `ReplayClient` returns a recorded response for a known request hash and RAISES `CassetteMiss` on an unknown one (never a network call). Implement the interface + `ReplayClient` (hash of model+messages+tools+temp+seed -> cassette file). Implement `OllamaClient` calling the local Ollama HTTP API.
+- [ ] **5.1 Deps.** Add `langgraph`, `pydantic-ai`, `groq`, `langfuse`. Install. Sign up for a free Groq API key at console.groq.com and set `GROQ_API_KEY` in `backend/.env` (never commit it).
+- [ ] **5.2 TDD the LLMClient interface.** `test_llm_client.py`: define an abstract `LLMClient` with `complete(messages, tools, **params)`. Test `ReplayClient` returns a recorded response for a known request hash and RAISES `CassetteMiss` on an unknown one (never a network call). Implement the interface + `ReplayClient` (hash of model+messages+tools+temp+seed -> cassette file). Implement `GroqClient` calling Groq's chat completions API (`GROQ_MODEL`, default `llama-3.3-70b-versatile`) via the `groq` SDK, catching a 429 response and raising a typed `RateLimited` error rather than retrying silently.
 - [ ] **5.3 Tools.** `tools.py`: `predict_service(vehicle_id)` (calls the registry/predictor), `search_kb(query)` (Phase 6 fills the body; stub returns `[]`), `schedule_service(vehicle_id, date, confirmed: bool)` (writes only if `confirmed`). Each tool is a typed pydantic function usable by PydanticAI.
 - [ ] **5.4 Specialists.** Each specialist is a PydanticAI agent constructed with the injected `LLMClient` and its allowed tools. Diagnostics -> predict_service; Scheduling -> schedule_service; Knowledge -> search_kb. Typed output models.
 - [ ] **5.5 Supervisor graph.** `supervisor.py`: a LangGraph `StateGraph` whose entry node classifies intent (diagnostics/scheduling/knowledge) and routes to the matching specialist node, then a compose node produces the final answer with citations. State carries the question, route, tool results, and `run_id`.
 - [ ] **5.6 TDD routing.** `test_supervisor_routing.py` (using `ReplayClient` cassettes so it is deterministic and free): a diagnostics-style question routes to Diagnostics and calls `predict_service`; a knowledge question routes to Knowledge. Assert on the recorded trajectory.
-- [ ] **5.7 Guardrails.** `guardrails.py`: (a) scheduling writes require `confirmed=True` - `test_guardrails.py::test_schedule_requires_confirmation` asserts an unconfirmed schedule does NOT write and instead returns a confirmation prompt; (b) a max-iteration counter aborts runaway loops. Wire into the graph.
+- [ ] **5.7 Guardrails.** `guardrails.py`: (a) scheduling writes require `confirmed=True` - `test_guardrails.py::test_schedule_requires_confirmation` asserts an unconfirmed schedule does NOT write and instead returns a confirmation prompt; (b) a max-iteration counter aborts runaway loops; (c) `test_guardrails.py::test_rate_limit_is_friendly` asserts a `RateLimited` error from `GroqClient` is caught and turned into a friendly "assistant is busy, try again shortly" response, not a 500. Wire into the graph.
 - [ ] **5.8 Assistant endpoint (non-streaming first).** `routers/assistant.py::POST /assistant/ask` runs the graph and returns the answer + trajectory + run_id. Guard with `require_permission(use_assistant)`.
 - [ ] **5.9 Verify + commit.** `make test` green (all agent tests run on ReplayClient, no network). Commit `feat: add LangGraph supervisor with PydanticAI specialists behind LLMClient`.
 
-**Acceptance gate:** routing + guardrail tests pass deterministically on ReplayClient; scheduling never writes without confirmation; switching `LLM_BACKEND=ollama` runs the same graph live locally.
+**Acceptance gate:** routing + guardrail tests pass deterministically on ReplayClient; scheduling never writes without confirmation; a rate-limit response degrades gracefully; switching `LLM_BACKEND=groq` runs the same graph live, in dev or hosted, with only `GROQ_API_KEY` set.
 
 ---
 
@@ -208,18 +208,19 @@
 
 **Goal:** The Knowledge specialist answers from a real synthetic KB with hybrid retrieval + rerank + inline citations + refusal on weak retrieval.
 
-**Dependencies:** Phase 5 (Knowledge specialist + LLMClient.embed), Phase 1 (pgvector tables).
+**Dependencies:** Phase 5 (Knowledge specialist), Phase 1 (pgvector tables).
 
 **Files:**
-- Create: `backend/app/rag/{ingest,retrieval,rerank}.py`, `backend/data/kb/*.md` (the corpus), `backend/scripts/ingest_kb.py`, `backend/tests/test_retrieval.py`, `backend/tests/test_knowledge_agent.py`
+- Create: `backend/app/agents/embeddings.py` (local embed + rerank helpers), `backend/app/rag/{ingest,retrieval,rerank}.py`, `backend/data/kb/*.md` (the corpus), `backend/scripts/ingest_kb.py`, `backend/tests/test_retrieval.py`, `backend/tests/test_knowledge_agent.py`
 - Modify: `backend/app/agents/tools.py` (`search_kb` body), `backend/app/models` (kb_documents, kb_chunks if not already added in Phase 1)
 
 **Tasks:**
 
+- [ ] **6.0 Embeddings/rerank deps.** Add `sentence-transformers`. Install. `agents/embeddings.py::embed_texts(texts) -> list[list[float]]` loads `EMBED_MODEL` (`sentence-transformers/all-MiniLM-L6-v2`) once at module load and encodes on CPU; `rerank(query, candidates) -> list[(candidate, score)]` loads `RERANK_MODEL` (`cross-encoder/ms-marco-MiniLM-L-6-v2`) and scores query/candidate pairs. Both run locally in every environment - no API, no GPU, no live/replay split.
 - [ ] **6.1 Author the corpus.** Write `data/kb/*.md`: per-make/model service schedules (oil/filter/brake/coolant intervals) and common issues, from publicly-known service-interval norms. No copyrighted manual text. Each file has front-matter (source title, section).
-- [ ] **6.2 Chunk + embed ingest.** `rag/ingest.py`: structure-aware chunking (by markdown section), embed each chunk via `LLMClient.embed` (nomic-embed-text), store vector + tsvector + metadata in `kb_chunks`. `scripts/ingest_kb.py` runs it. Verify row counts.
+- [ ] **6.2 Chunk + embed ingest.** `rag/ingest.py`: structure-aware chunking (by markdown section), embed each chunk via `embeddings.embed_texts`, store vector + tsvector + metadata in `kb_chunks`. `scripts/ingest_kb.py` runs it. Verify row counts.
 - [ ] **6.3 TDD hybrid retrieval.** `test_retrieval.py::test_hybrid_finds_known_fact`: for a query with a known answer in the corpus, hybrid retrieval (pgvector cosine + tsvector ts_rank, fused by RRF) returns the right chunk in the top-k. Implement `rag/retrieval.py`.
-- [ ] **6.4 Rerank.** `rag/rerank.py`: cross-encoder (bge-reranker-v2-m3 via Ollama or local) reranks top ~20 to top 4-6. Test that rerank improves the position of the gold chunk vs raw fusion on a fixture query.
+- [ ] **6.4 Rerank.** `rag/rerank.py` wraps `embeddings.rerank` to take the top ~20 fused results down to top 4-6. Test that rerank improves the position of the gold chunk vs raw fusion on a fixture query.
 - [ ] **6.5 Wire `search_kb` + citations.** Fill `tools.py::search_kb` to return reranked chunks with `{source, section, chunk_id, text}`. The Knowledge specialist composes an answer with inline `[n]` markers mapped to a `sources[]` list.
 - [ ] **6.6 Refusal on weak retrieval.** `test_knowledge_agent.py::test_refuses_when_no_context`: a question with no supporting chunk (retrieval scores below threshold) returns an explicit refusal, not a fabricated answer.
 - [ ] **6.7 Verify + commit.** `make test` green. Commit `feat: add hybrid RAG with rerank, citations, and refusal`.
@@ -228,24 +229,24 @@
 
 ---
 
-## Phase 7: Replay and DEMO_MODE (cassettes + golden scenarios)
+## Phase 7: Replay mode for CI (cassettes)
 
-**Goal:** The whole assistant runs deterministically with zero model calls under `LLM_BACKEND=replay`, including curated demo scenarios.
+**Goal:** The whole assistant test suite runs deterministically with zero network calls under `LLM_BACKEND=replay`, so CI is fast, free, and never depends on Groq's uptime or rate limits. (The public site itself runs live via Groq - see Phase 9 - this phase is a testing concern only.)
 
 **Dependencies:** Phases 5-6.
 
 **Files:**
-- Create: `backend/cassettes/` (hash-keyed for CI), `backend/cassettes/golden/*.json` (curated), `backend/scripts/record_cassettes.py`, `backend/tests/test_demo_mode.py`
+- Create: `backend/cassettes/` (hash-keyed test fixtures), `backend/scripts/record_cassettes.py`, `backend/tests/test_replay_mode.py`
 - Modify: `backend/app/agents/llm_client.py` (record hook)
 
 **Tasks:**
 
-- [ ] **7.1 Record hook.** Add a record mode to `OllamaClient` (temp 0, fixed seed) that writes each request/response to a cassette keyed by the request hash. `scripts/record_cassettes.py` replays the test suite's prompts live once to populate CI cassettes.
-- [ ] **7.2 Curate golden scenarios.** Author 4-6 end-to-end demo conversations (the ones the public site will showcase, e.g. the Civic service question). Record their cassettes into `cassettes/golden/`.
-- [ ] **7.3 TDD demo mode.** `test_demo_mode.py`: with `LLM_BACKEND=replay`, each golden scenario replays byte-for-byte and any off-script prompt raises `CassetteMiss` (proving no silent network fallback).
-- [ ] **7.4 Verify + commit.** `make test` green with `LLM_BACKEND=replay`. Commit `feat: add deterministic replay mode with golden demo scenarios`.
+- [ ] **7.1 Record hook.** Add a record mode to `GroqClient` (temp 0, fixed seed) that writes each request/response to a cassette keyed by the request hash. `scripts/record_cassettes.py` runs the test suite's prompts against live Groq once to populate the CI cassettes.
+- [ ] **7.2 Cover the test scenarios.** Ensure the routing tests (Phase 5) and retrieval/knowledge tests (Phase 6) all have recorded cassettes, plus a couple of representative end-to-end conversations (e.g. a diagnostics question and a knowledge question) for regression coverage.
+- [ ] **7.3 TDD replay mode.** `test_replay_mode.py`: with `LLM_BACKEND=replay`, each recorded scenario replays byte-for-byte and any off-script prompt raises `CassetteMiss` (proving no silent network fallback).
+- [ ] **7.4 Verify + commit.** `make test` green with `LLM_BACKEND=replay`. Commit `feat: add deterministic replay mode for CI`.
 
-**Acceptance gate:** full assistant suite passes in replay with no network; golden scenarios reproduce exactly; cache miss raises.
+**Acceptance gate:** full assistant suite passes in replay with no network; recorded scenarios reproduce exactly; cache miss raises.
 
 ---
 
@@ -283,14 +284,14 @@
 
 **Tasks:**
 
-- [ ] **9.1 Ragas suite.** `evals/ragas_suite.py`: over a fixed eval set of KB questions, compute faithfulness, answer relevancy, context precision/recall using a local Ollama judge. Print + write scores to `eval_runs`.
+- [ ] **9.1 Ragas suite.** `evals/ragas_suite.py`: over a fixed eval set of KB questions, compute faithfulness, answer relevancy, context precision/recall using `GroqClient` as the judge (free tier). Print + write scores to `eval_runs`.
 - [ ] **9.2 DeepEval suite.** `evals/deepeval_suite.py`: trajectory/tool-selection tests over the golden scenarios (assert the supervisor picks the right specialist and tool). `make eval` runs both.
 - [ ] **9.3 Langfuse.** `observability/langfuse.py`: init the Langfuse Cloud client from env; decorate the graph run so each assistant call emits a trace tagged with run_id. Confirm a trace appears in the Langfuse dashboard; capture the screenshot for the README.
 - [ ] **9.4 CI workflow.** `ci.yml`: on PR - set up Postgres+pgvector service, run `ruff`, `pytest` (backend, replay mode), `npm run build` + Playwright (frontend), then `make eval` (replay + local judge) as a required gate. Fail the build if eval scores drop below thresholds.
-- [ ] **9.5 Deploy.** Provision Neon (run migrations + seed + ingest KB against it). `render.yaml` deploys the backend with `LLM_BACKEND=replay` and Langfuse env. Deploy the frontend to Vercel pointing at the Render API. Add a scheduled keep-warm ping to a Render endpoint (targets Render cold start, not Neon).
-- [ ] **9.6 Verify + commit.** CI green on a PR; live URL loads the dashboard and a golden assistant scenario. Commit `feat: add CI with eval gate and deploy config`.
+- [ ] **9.5 Deploy.** Provision Neon (run migrations + seed + ingest KB against it). `render.yaml` deploys the backend with `LLM_BACKEND=groq`, `GROQ_API_KEY` (Render secret), and Langfuse env, so the public demo runs the assistant live for real. Deploy the frontend to Vercel pointing at the Render API. Add a scheduled keep-warm ping to a Render endpoint (targets Render cold start, not Neon).
+- [ ] **9.6 Verify + commit.** CI green on a PR; live URL loads the dashboard and answers a live assistant question. Commit `feat: add CI with eval gate and deploy config`.
 
-**Acceptance gate:** PR CI runs tests + build + e2e + eval gate; public URL serves the dashboard and a golden assistant conversation in replay; a Langfuse trace is captured.
+**Acceptance gate:** PR CI runs tests + build + e2e + eval gate (all in replay, no network); public URL serves the dashboard and a live, real assistant conversation via Groq; a Langfuse trace is captured.
 
 ---
 
@@ -306,8 +307,8 @@
 
 **Tasks:**
 
-- [ ] **10.1 README.** Overview, architecture diagram, live link, eval scores table, annotated Langfuse trace screenshot, local-dev quickstart (docker-compose + Ollama), and the no-paid-API note.
-- [ ] **10.2 ADRs.** One each for: Argon2id + rotating refresh auth; LangGraph + PydanticAI agent choice (with the tradeoff from the spec); hybrid RAG design; deploy stack (Neon/Render/Vercel); live-vs-replay model strategy. Use a short standard ADR template (context, decision, consequences).
+- [ ] **10.1 README.** Overview, architecture diagram, live link, eval scores table, annotated Langfuse trace screenshot, local-dev quickstart (docker-compose + a free Groq API key, no GPU needed), and the no-paid-API note.
+- [ ] **10.2 ADRs.** One each for: Argon2id + rotating refresh auth; LangGraph + PydanticAI agent choice (with the tradeoff from the spec); hybrid RAG design; deploy stack (Neon/Render/Vercel); free-tier Groq + local embeddings/rerank strategy (with the rate-limit tradeoff). Use a short standard ADR template (context, decision, consequences).
 - [ ] **10.3 Architecture doc + diagram.** `docs/architecture.md` with the data-flow diagram (mermaid) from the spec.
 - [ ] **10.4 Case study.** `docs/case-study.md`: problem, design, tradeoffs, what you'd do next.
 - [ ] **10.5 Verify + commit.** Links resolve, scores match the latest eval run. Commit `docs: add README, ADRs, architecture, and case study`.
@@ -324,6 +325,6 @@
 
 ## Self-review notes (traceability to spec)
 
-- Spec 2 (roles + live/replay) -> Phase 2 (roles), Phase 5/7 (LLMClient + replay), Phase 9 (hosted replay). No hidden GPU: enforced by Render replay-only in 9.5.
-- Spec 4.2 (auth) -> Phase 2. 4.3 (registry + bias) -> Phase 3. 4.4 (LangGraph+PydanticAI+guardrails) -> Phase 5. 4.5 (LLMClient) -> Phase 5. 4.6 (RAG corpus + hybrid + rerank + refusal) -> Phase 6. 4.7 (Ragas + DeepEval) -> Phase 9. 4.8 (Langfuse Cloud) -> Phase 9. 4.9 (SSE) -> Phase 8. 4.10 (pytest/httpx + Playwright) -> every phase's tests.
+- Spec 2 (roles + live everywhere via Groq) -> Phase 2 (roles), Phase 5 (GroqClient live), Phase 7 (ReplayClient for CI only), Phase 9 (hosted live via Groq). No GPU anywhere: enforced by dropping Ollama in Phase 0 and deploying `LLM_BACKEND=groq` in 9.5.
+- Spec 4.2 (auth) -> Phase 2. 4.3 (registry + bias) -> Phase 3. 4.4 (LangGraph+PydanticAI+guardrails incl. rate-limit handling) -> Phase 5. 4.5 (LLMClient: GroqClient+ReplayClient) -> Phase 5. 4.6 (RAG corpus + local embed/rerank + hybrid + refusal) -> Phase 6. 4.7 (Ragas + DeepEval) -> Phase 9. 4.8 (Langfuse Cloud) -> Phase 9. 4.9 (SSE) -> Phase 8. 4.10 (pytest/httpx + Playwright) -> every phase's tests.
 - Spec 5 (Midnight Indigo frontend, DAL, CVE) -> Phases 4, 8. Spec 6 (deploy) -> Phase 9. Spec 7 (docs) -> Phase 10. Spec 8 (non-goals) -> honored throughout (no k8s/self-host observability/GPU).
