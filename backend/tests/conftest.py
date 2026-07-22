@@ -22,6 +22,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://pitcrew:pitcrew@localhost:5432/pitcrew_test",
 )
+os.environ.setdefault("JWT_SECRET", "test-only-secret-do-not-use-in-prod")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
