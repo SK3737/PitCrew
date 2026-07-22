@@ -54,7 +54,7 @@ pitcrew/
   backend/        FastAPI app, agents, RAG, evals
   frontend/       Next.js 16 app
   docs/           spec, ADRs, architecture diagram, case study
-  docker-compose.yml   Postgres+pgvector, Ollama, backend, frontend for local dev
+  docker-compose.yml   Postgres+pgvector, backend, frontend for local dev
 ```
 
 Data flow for an assistant question:

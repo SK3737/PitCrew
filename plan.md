@@ -236,13 +236,13 @@
 **Dependencies:** Phases 5-6.
 
 **Files:**
-- Create: `backend/cassettes/` (hash-keyed test fixtures), `backend/scripts/record_cassettes.py`, `backend/tests/test_replay_mode.py`
+- Create: `backend/cassettes/` (hash-keyed test fixtures), `backend/cassettes/golden/*.json` (curated end-to-end scenarios), `backend/scripts/record_cassettes.py`, `backend/tests/test_replay_mode.py`
 - Modify: `backend/app/agents/llm_client.py` (record hook)
 
 **Tasks:**
 
 - [ ] **7.1 Record hook.** Add a record mode to `GroqClient` (temp 0, fixed seed) that writes each request/response to a cassette keyed by the request hash. `scripts/record_cassettes.py` runs the test suite's prompts against live Groq once to populate the CI cassettes.
-- [ ] **7.2 Cover the test scenarios.** Ensure the routing tests (Phase 5) and retrieval/knowledge tests (Phase 6) all have recorded cassettes, plus a couple of representative end-to-end conversations (e.g. a diagnostics question and a knowledge question) for regression coverage.
+- [ ] **7.2 Cover the test scenarios.** Ensure the routing tests (Phase 5) and retrieval/knowledge tests (Phase 6) all have recorded cassettes, plus a handful of curated end-to-end "golden scenarios" (e.g. a diagnostics question and a knowledge question) recorded into `cassettes/golden/` - these are the deterministic conversations the frontend e2e (Phase 8) and DeepEval (Phase 9) run against.
 - [ ] **7.3 TDD replay mode.** `test_replay_mode.py`: with `LLM_BACKEND=replay`, each recorded scenario replays byte-for-byte and any off-script prompt raises `CassetteMiss` (proving no silent network fallback).
 - [ ] **7.4 Verify + commit.** `make test` green with `LLM_BACKEND=replay`. Commit `feat: add deterministic replay mode for CI`.
 
