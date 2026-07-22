@@ -87,6 +87,13 @@ async def rotate_refresh_token(session: AsyncSession, refresh_jwt: str) -> str:
     except jwt.PyJWTError as exc:
         raise InvalidRefreshToken(str(exc)) from exc
 
+    if claims.get("type") != "refresh":
+        # Belt-and-braces: an access token would also fail the jti lookup
+        # below (its jti was never written to refresh_tokens), but checking
+        # the claim explicitly makes the rejection reason unambiguous rather
+        # than relying on that as an accident of the schema.
+        raise InvalidRefreshToken("not a refresh token")
+
     jti = claims.get("jti")
     user_id = int(claims["sub"])
 

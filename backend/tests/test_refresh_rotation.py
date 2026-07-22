@@ -9,6 +9,7 @@ import pytest
 from app.auth.tokens import (
     InvalidRefreshToken,
     RefreshTokenReused,
+    create_access_token,
     decode_token,
     issue_refresh_token,
     rotate_refresh_token,
@@ -73,3 +74,11 @@ async def test_unknown_refresh_token_is_rejected(db_session):
 
     with pytest.raises(InvalidRefreshToken):
         await rotate_refresh_token(db_session, bogus_token)
+
+
+async def test_access_token_cannot_be_used_as_a_refresh_token(db_session):
+    user = await _make_user(db_session)
+    access_token = create_access_token(user_id=user.id, role=user.role)
+
+    with pytest.raises(InvalidRefreshToken):
+        await rotate_refresh_token(db_session, access_token)
