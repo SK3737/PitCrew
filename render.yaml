@@ -5,8 +5,10 @@
 ## report, "What is out of scope"). Written as plausible, correct
 ## infrastructure-as-code for a human to activate later by connecting this
 ## repo to a new Render Blueprint. Locally verified instead:
-##   - `docker build -t pitcrew-backend ./backend` (the same Dockerfile this
-##     blueprint points at) builds successfully.
+##   - `docker build ./backend` (the same Dockerfile this blueprint points
+##     at) builds successfully, and a container run from it serves
+##     `GET /health` -> {"status":"ok","model_v1_loaded":true,
+##     "model_v2_loaded":true,"db_ok":true} against a real local Postgres.
 ##   - Every env var below matches a field `app.config.Settings` actually
 ##     reads (see backend/app/config.py) - none invented.
 ##
