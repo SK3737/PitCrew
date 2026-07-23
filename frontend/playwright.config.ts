@@ -29,6 +29,20 @@ export default defineConfig({
       reuseExistingServer: true,
       timeout: 30_000,
       stdout: "pipe",
+      env: {
+        // Pinned explicitly (matches the default in app.config.Settings)
+        // so this e2e run can never accidentally hit a live LLM API even
+        // if a developer's local .env happens to set LLM_BACKEND=groq -
+        // per the project-wide constraint, no paid LLM API is ever called
+        // anywhere in this codebase, including in e2e tests.
+        LLM_BACKEND: "replay",
+        // assistant.spec.ts asks the committed golden knowledge question
+        // (see frontend/e2e/seed.py's docstring) - CASSETTE_DIR points
+        // ReplayClient at backend/cassettes/golden/ specifically, since
+        // ReplayClient never searches subdirectories of its default
+        // backend/cassettes/ root.
+        CASSETTE_DIR: path.resolve(BACKEND_DIR, "cassettes", "golden"),
+      },
     },
     {
       name: "frontend",

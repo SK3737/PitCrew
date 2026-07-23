@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { getKpis, getVehicles, verifySession } from "@/lib/dal";
 import { KpiTiles } from "@/components/dashboard/kpi-tiles";
 import { ServiceForecastChart } from "@/components/dashboard/service-forecast-chart";
@@ -17,7 +19,10 @@ export default async function DashboardPage() {
           <h1 className="text-lg font-semibold">PitCrew</h1>
           <p className="text-sm text-[var(--muted)]">Fleet service dashboard</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <Link href="/assistant" className="text-sm text-[var(--muted)] hover:text-[var(--ink)]">
+            Assistant
+          </Link>
           <span className="text-sm text-[var(--muted)] capitalize">{session.role}</span>
           <LogoutButton />
         </div>
