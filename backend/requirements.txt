@@ -17,6 +17,12 @@ pgvector
 argon2-cffi
 pyjwt
 
+# Agent core: LangGraph supervisor + PydanticAI specialists behind LLMClient
+langgraph
+pydantic-ai
+groq
+langfuse
+
 # Testing
 pytest
 pytest-asyncio

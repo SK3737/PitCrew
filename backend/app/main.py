@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.db.session import engine
-from app.routers import auth, predict, vehicles
+from app.routers import assistant, auth, predict, vehicles
 from app.services.predictor import MODEL_V1_PATH, MODEL_V2_PATH, load_model
 
 logging.basicConfig(
@@ -38,6 +38,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(predict.router)
 app.include_router(vehicles.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health", tags=["meta"])
