@@ -14,11 +14,12 @@
         "role": "assistant",
         "tool_calls": [
           {
-            "arguments": {
-              "query": "How often should I flush the coolant on a BMW 3 Series?"
+            "function": {
+              "arguments": "{\"query\": \"How often should I flush the coolant on a BMW 3 Series?\"}",
+              "name": "search_kb"
             },
             "id": "call_1",
-            "name": "search_kb"
+            "type": "function"
           }
         ]
       },

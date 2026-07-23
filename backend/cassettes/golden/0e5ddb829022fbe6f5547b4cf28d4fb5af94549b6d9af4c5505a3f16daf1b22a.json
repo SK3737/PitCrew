@@ -14,11 +14,12 @@
         "role": "assistant",
         "tool_calls": [
           {
-            "arguments": {
-              "vehicle_id": "V001"
+            "function": {
+              "arguments": "{\"vehicle_id\": \"V001\"}",
+              "name": "predict_service"
             },
             "id": "call_1",
-            "name": "predict_service"
+            "type": "function"
           }
         ]
       },

@@ -14,11 +14,12 @@
         "role": "assistant",
         "tool_calls": [
           {
-            "arguments": {
-              "query": "How often should Honda Civic brake fluid be replaced?"
+            "function": {
+              "arguments": "{\"query\": \"How often should Honda Civic brake fluid be replaced?\"}",
+              "name": "search_kb"
             },
             "id": "call_1",
-            "name": "search_kb"
+            "type": "function"
           }
         ]
       },

@@ -22,6 +22,7 @@ for exactly this reason (see ``app.agents.specialists`` docstrings).
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Optional
 
 from pydantic_ai.messages import (
@@ -82,8 +83,19 @@ def to_plain_messages(messages: list[ModelMessage]) -> list[dict[str, Any]]:
                         }
                     )
         elif isinstance(message, ModelResponse):
+            # OpenAI/Groq wire format for a historical assistant tool call -
+            # not the app's own ToolCall shape (see llm_client.ToolCall):
+            # `type` is required, and `function.arguments` must be a JSON
+            # string, not a dict. Omitting `type` passes locally against
+            # ReplayClient (which only compares hashes) but a live Groq call
+            # rejects it with "property 'type' is missing" the moment a
+            # specialist's second turn resends this message back.
             tool_calls = [
-                {"id": p.tool_call_id, "name": p.tool_name, "arguments": p.args_as_dict()}
+                {
+                    "id": p.tool_call_id,
+                    "type": "function",
+                    "function": {"name": p.tool_name, "arguments": json.dumps(p.args_as_dict())},
+                }
                 for p in message.parts
                 if isinstance(p, ToolCallPart)
             ]
