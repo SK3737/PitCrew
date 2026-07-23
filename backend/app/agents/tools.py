@@ -128,12 +128,47 @@ class InMemoryScheduler:
         self.booked.append((vehicle_id, service_date))
 
 
+class KBSearchProvider(Protocol):
+    async def search(self, query: str) -> list["KBHit"]: ...
+
+
+class RepositoryKBSearchProvider:
+    """Production KBSearchProvider - Phase 6's real RAG pipeline: hybrid
+    (pgvector cosine + Postgres full-text) retrieval, RRF-fused, then
+    cross-encoder reranked down to the final few chunks. Chunks that don't
+    clear `REFUSAL_SCORE_THRESHOLD` are dropped entirely - an empty return
+    here is exactly what makes the Knowledge specialist refuse rather than
+    answer from weak/irrelevant context (see app.rag.rerank)."""
+
+    def __init__(self, session) -> None:
+        self._session = session
+
+    async def search(self, query: str) -> list["KBHit"]:
+        from app.rag.rerank import REFUSAL_SCORE_THRESHOLD, rerank_candidates
+        from app.rag.retrieval import hybrid_search
+
+        fused = await hybrid_search(self._session, query)
+        reranked = rerank_candidates(query, fused)
+        return [
+            KBHit(
+                chunk_id=chunk.chunk_id,
+                source=chunk.source,
+                section=chunk.section,
+                text=chunk.text,
+                score=chunk.score,
+            )
+            for chunk in reranked
+            if chunk.score >= REFUSAL_SCORE_THRESHOLD
+        ]
+
+
 @dataclass
 class AgentDeps:
     """Dependencies injected into every specialist agent's RunContext."""
 
     vehicle_data: VehicleDataProvider
     scheduler: Scheduler = field(default_factory=InMemoryScheduler)
+    kb: Optional[KBSearchProvider] = None
 
 
 class PredictServiceResult(BaseModel):
@@ -183,19 +218,40 @@ async def predict_service(
 
 
 class KBHit(BaseModel):
-    title: str
-    snippet: str
+    """One retrieved-and-reranked knowledge-base chunk, shaped for the
+    Knowledge specialist's citation composition (task 6.5): `chunk_id`
+    dedupes/numbers sources across possibly-repeated hits within one run,
+    `source` + `section` render a human-readable citation (e.g. "Toyota
+    Corolla Service Guide (Synthetic) - Oil and Filter Change"), and `text`
+    is the actual chunk content the answer must be grounded in.
+
+    This replaces Phase 5's stub shape (`{title, snippet, source}` - never
+    populated, since search_kb always returned `[]`) now that real
+    retrieval exists and citations need to reference a specific chunk, not
+    just a document title.
+    """
+
+    chunk_id: int
     source: str
+    section: str
+    text: str
+    score: float
 
 
 async def search_kb(ctx: RunContext[AgentDeps], query: str) -> list[KBHit]:
     """Search the knowledge base for `query`.
 
-    Stub for Phase 5: no knowledge base is indexed yet. Phase 6 (RAG) fills
-    this in with real retrieval against an embedded corpus; until then this
-    always returns an empty list and the Knowledge specialist says so.
+    Delegates to `ctx.deps.kb` (a `KBSearchProvider` - `RepositoryKBSearchProvider`
+    in production, wired in `routers/assistant.py`). Returns `[]` when no
+    provider is configured (kept for callers/tests that don't need KB
+    behaviour, mirroring Phase 5's stub) *or* when real retrieval ran but
+    found nothing that clears the refusal threshold - either way, an empty
+    list is what makes the Knowledge specialist say it has no documentation
+    rather than fabricate an answer (see app.agents.specialists.knowledge).
     """
-    return []
+    if ctx.deps.kb is None:
+        return []
+    return await ctx.deps.kb.search(query)
 
 
 class ScheduleServiceResult(BaseModel):

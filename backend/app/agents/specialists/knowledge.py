@@ -1,10 +1,18 @@
 """
-Knowledge specialist - answers general questions by calling `search_kb`.
+Knowledge specialist - answers general questions by calling `search_kb`,
+which (as of Phase 6) runs real hybrid retrieval + rerank against the
+embedded synthetic corpus (see `app.rag.*`, `app.agents.tools.search_kb`).
 
-`search_kb` is a stub in Phase 5 (always returns []) - Phase 6 (RAG) fills
-in real retrieval against an embedded corpus. Until then this specialist
-truthfully reports it has no knowledge base to search rather than
-hallucinating an answer.
+Citation composition: `search_kb` returns `KBHit`s in reranked (most
+relevant first) order. `run_knowledge` collects every hit returned across
+the run, deduped by `chunk_id` and in first-seen order, into
+`KnowledgeAnswer.citations` - that list's index (1-based) is exactly the
+`[n]` numbering the system prompt asks the model to cite inline with, so
+citation `n` always resolves to `citations[n-1]`. When `search_kb` returns
+no hits at all - either because retrieval found nothing, or because
+everything it found scored below the refusal threshold (see
+`app.rag.rerank.REFUSAL_SCORE_THRESHOLD`) - the prompt requires an explicit
+refusal instead of a guess.
 """
 
 from __future__ import annotations
@@ -21,10 +29,12 @@ from app.agents.tools import AgentDeps, KBHit, search_kb
 
 SYSTEM_PROMPT = (
     "You are PitCrew's knowledge specialist. Call search_kb with the user's "
-    "question. If it returns no results (the knowledge base is not built "
-    "yet), say plainly that you don't have documentation to answer this yet "
-    "instead of guessing. If it returns hits, answer using them and cite "
-    "each hit's source."
+    "question. If it returns no results, that means there is no supporting "
+    "documentation for this question - say so plainly instead of guessing "
+    "or fabricating an answer. If it returns hits, answer using ONLY what "
+    "they say, and cite every fact you use with an inline [n] marker "
+    "matching that hit's position in the results (the first hit is [1], "
+    "the second is [2], and so on)."
 )
 
 
@@ -51,12 +61,21 @@ async def run_knowledge(llm_client: LLMClient, deps: AgentDeps, question: str) -
     agent = build_knowledge_agent(llm_client)
     result = await agent.run(question, deps=deps)
 
+    seen_chunk_ids: set[int] = set()
     citations: list[KBHit] = []
     for returned in collect_tool_returns(result.all_messages(), "search_kb"):
         # search_kb returns a list[KBHit]; ToolReturnPart wraps non-dict
         # values under RETURN_VALUE_KEY ("return_value") when dumping.
         hits = returned.get("return_value", returned if isinstance(returned, list) else [])
         for hit in hits or []:
-            citations.append(KBHit(**hit))
+            kb_hit = KBHit(**hit)
+            # Dedup by chunk_id (not just object identity) - the same
+            # chunk could come back from more than one search_kb call
+            # within a single run, and citations[i] must map 1:1 to the
+            # [n] markers the system prompt asks the model to use.
+            if kb_hit.chunk_id in seen_chunk_ids:
+                continue
+            seen_chunk_ids.add(kb_hit.chunk_id)
+            citations.append(kb_hit)
 
     return KnowledgeAnswer(answer=result.output, citations=citations)

@@ -23,6 +23,10 @@ pydantic-ai
 groq
 langfuse
 
+# RAG: local CPU embeddings + reranking (no API, no GPU - see agents/embeddings.py)
+sentence-transformers
+pyyaml
+
 # Testing
 pytest
 pytest-asyncio

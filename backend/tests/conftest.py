@@ -26,6 +26,7 @@ os.environ.setdefault("JWT_SECRET", "test-only-secret-do-not-use-in-prod")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text as sa_text
 
 import app.models  # noqa: F401 - registers all ORM models on Base.metadata
 from app.auth.hashing import hash_password
@@ -37,8 +38,17 @@ from app.repositories.users import UserRepository
 
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_database():
-    """Recreate a fresh schema on the test database before every test."""
+    """Recreate a fresh schema on the test database before every test.
+
+    Tests build the schema straight from `Base.metadata` rather than
+    running Alembic migrations (see module docstring), which means the
+    `CREATE EXTENSION vector` step the KB migration performs (Phase 6) never
+    runs here - a fresh CI database would otherwise fail to create
+    `kb_chunks`' pgvector column. `IF NOT EXISTS` makes this a no-op on a
+    dev machine where Phase 0 already enabled it.
+    """
     async with engine.begin() as conn:
+        await conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield

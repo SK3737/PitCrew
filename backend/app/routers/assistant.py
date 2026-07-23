@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.llm_client import build_default_client
 from app.agents.supervisor import ask
-from app.agents.tools import AgentDeps, RepositoryVehicleDataProvider
+from app.agents.tools import AgentDeps, RepositoryKBSearchProvider, RepositoryVehicleDataProvider
 from app.auth.rbac import require_permission
 from app.db.session import get_session
 from app.models.user import User
@@ -39,7 +39,10 @@ async def ask_assistant(
     current_user: User = Depends(require_permission("use_assistant", "use_assistant_replay")),
 ) -> AssistantAskResponse:
     llm_client = build_default_client()
-    deps = AgentDeps(vehicle_data=RepositoryVehicleDataProvider(session))
+    deps = AgentDeps(
+        vehicle_data=RepositoryVehicleDataProvider(session),
+        kb=RepositoryKBSearchProvider(session),
+    )
 
     final_state = await ask(llm_client, deps, payload.question)
 
