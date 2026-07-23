@@ -35,13 +35,14 @@ services:
     region: oregon
     healthCheckPath: /health
     autoDeploy: true
-    # Free tier doesn't support preDeployCommand (paid-tier-only hook), so
-    # migrations run as part of container start instead. `alembic upgrade
-    # head` is idempotent - a no-op once already at head - so re-running it
-    # on every deploy/wake-from-sleep is safe.
-    dockerCommand: >-
-      sh -c "python -m alembic upgrade head &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # Free tier doesn't support preDeployCommand (paid-tier-only hook), and
+    # Render's dockerCommand field doesn't reliably shell-parse an inline
+    # `sh -c "cmd1 && cmd2"` string (observed: it ran the whole string,
+    # quotes and `&&` included, as one literal - not-found - command name).
+    # Migrations instead run from backend/entrypoint.sh, baked into the
+    # image as the Dockerfile's own CMD - no dockerCommand override needed.
+    # `alembic upgrade head` is idempotent, so re-running it on every
+    # deploy/wake-from-sleep is safe.
     envVars:
       - key: DATABASE_URL
         sync: false # Neon Postgres connection string - set manually

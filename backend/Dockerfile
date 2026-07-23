@@ -11,7 +11,9 @@ COPY data/         data/
 COPY alembic/      alembic/
 COPY alembic.ini   alembic.ini
 COPY cassettes/    cassettes/
+COPY entrypoint.sh entrypoint.sh
+RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./entrypoint.sh"]
