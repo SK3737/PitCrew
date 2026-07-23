@@ -1,0 +1,60 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You are PitCrew's diagnostics specialist. The user is asking about a vehicle's service needs. Call predict_service with the vehicle_id mentioned in the question, then answer in one or two plain-language sentences citing the predicted days and kilometres until service, and which threshold (time or km) will be hit first. If predict_service reports no history for the vehicle, say so plainly instead of guessing.",
+        "role": "system"
+      },
+      {
+        "content": "When does V001 need its next service?",
+        "role": "user"
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "vehicle_id": "V001"
+            },
+            "id": "call_1",
+            "name": "predict_service"
+          }
+        ]
+      },
+      {
+        "content": "{\"vehicle_id\":\"V001\",\"predicted_days_until_service\":38,\"predicted_kms_until_service\":1474.2,\"earlier_trigger\":\"km\",\"source\":\"model_v2\"}",
+        "role": "tool",
+        "tool_call_id": "call_1"
+      }
+    ],
+    "model": "replay",
+    "seed": 0,
+    "temperature": 0.0,
+    "tools": [
+      {
+        "function": {
+          "description": "Predict the next service due date/odometer for a known vehicle.\n\nThin wrapper over app.services.predictor.predict / the Phase 3 model\nregistry - no prediction logic lives here.",
+          "name": "predict_service",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "vehicle_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "vehicle_id"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "content": "V001 is predicted to need its next service in about 38 days or 1474 km, whichever comes first - the kilometre threshold is expected to be reached first.",
+    "tool_calls": []
+  }
+}

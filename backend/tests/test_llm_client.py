@@ -136,6 +136,88 @@ def test_groq_client_builds_request_and_parses_tool_calls():
     assert result.tool_calls == [ToolCall(id="call_1", name="predict_service", arguments={"vehicle_id": "V001"})]
 
 
+def test_groq_client_record_mode_writes_cassette_replayable_by_replay_client(tmp_path):
+    """Task 7.1: a `GroqClient` constructed with `record_dir` writes every
+    request/response it makes to a cassette, keyed by the exact same
+    `request_hash` `ReplayClient` uses - so a cassette recorded from a live
+    call is immediately replayable offline with zero translation step.
+    Record mode also pins temperature=0.0/seed=0 regardless of what the
+    caller passed, matching every call site in this codebase (classify_intent,
+    llm_client_model's defaults) so a recording pass is reproducible."""
+
+    class _ToolCallFunction:
+        name = "predict_service"
+        arguments = '{"vehicle_id": "V001"}'
+
+    class _ToolCall:
+        id = "call_1"
+        function = _ToolCallFunction()
+
+    class _Message:
+        content = None
+        tool_calls = [_ToolCall()]
+
+    class _Choice:
+        message = _Message()
+
+    class _Completion:
+        choices = [_Choice()]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            return _Completion()
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeGroqSDKClient:
+        chat = _FakeChat()
+
+    client = GroqClient(model="llama-3.3-70b-versatile", client=_FakeGroqSDKClient(), record_dir=tmp_path)
+    # Caller passes temperature=0.9/seed=None - record mode must override both.
+    result = client.complete(MESSAGES, temperature=0.9, seed=None)
+
+    assert result.tool_calls == [ToolCall(id="call_1", name="predict_service", arguments={"vehicle_id": "V001"})]
+
+    h = request_hash("llama-3.3-70b-versatile", MESSAGES, None, 0.0, 0)
+    cassette_path = tmp_path / f"{h}.json"
+    assert cassette_path.exists()
+
+    replay_client = ReplayClient(cassette_dir=tmp_path, model="llama-3.3-70b-versatile")
+    replayed = replay_client.complete(MESSAGES, temperature=0.0, seed=0)
+    assert replayed.tool_calls == result.tool_calls
+
+
+def test_groq_client_without_record_dir_never_writes_a_cassette(tmp_path):
+    """Default (no `record_dir`) behaviour is unchanged - GroqClient is only
+    ever a recorder when explicitly asked to be one."""
+
+    class _Message:
+        content = "hello"
+        tool_calls = None
+
+    class _Choice:
+        message = _Message()
+
+    class _Completion:
+        choices = [_Choice()]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            return _Completion()
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeGroqSDKClient:
+        chat = _FakeChat()
+
+    client = GroqClient(client=_FakeGroqSDKClient())
+    client.complete(MESSAGES)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_build_default_client_selects_backend_from_settings(monkeypatch):
     monkeypatch.setattr(settings, "LLM_BACKEND", "replay")
     assert isinstance(build_default_client(), ReplayClient)

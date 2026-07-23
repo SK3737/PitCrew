@@ -1,0 +1,60 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You are PitCrew's knowledge specialist. Call search_kb with the user's question. If it returns no results, that means there is no supporting documentation for this question - say so plainly instead of guessing or fabricating an answer. If it returns hits, answer using ONLY what they say, and cite every fact you use with an inline [n] marker matching that hit's position in the results (the first hit is [1], the second is [2], and so on).",
+        "role": "system"
+      },
+      {
+        "content": "How often should I flush the coolant on a BMW 3 Series?",
+        "role": "user"
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "query": "How often should I flush the coolant on a BMW 3 Series?"
+            },
+            "id": "call_1",
+            "name": "search_kb"
+          }
+        ]
+      },
+      {
+        "content": "[{\"chunk_id\":3,\"source\":\"BMW 3 Series Service Guide (Synthetic)\",\"section\":\"Coolant Service\",\"text\":\"## Coolant Service\\n\\nBMW's factory long-life coolant is commonly rated for around 4-6 years or\\n100,000-150,000 km, after which a full flush is recommended to protect the\\naluminium engine block and plastic coolant system components from\\ncorrosion as seals age.\",\"score\":4.157509803771973},{\"chunk_id\":35,\"source\":\"Volkswagen Golf Service Guide (Synthetic)\",\"section\":\"Coolant Service\",\"text\":\"## Coolant Service\\n\\nVW's G13 long-life coolant is commonly rated for the vehicle's lifetime\\nunder normal conditions, though many independent shops recommend a\\nprecautionary flush every 5 years/150,000 km to guard against water pump\\nseal and radiator seam corrosion as the vehicle ages.\",\"score\":3.1263840198516846},{\"chunk_id\":2,\"source\":\"BMW 3 Series Service Guide (Synthetic)\",\"section\":\"Brake Service\",\"text\":\"## Brake Service\\n\\nFront brake pads typically last 30,000-40,000 km, with BMW's brake-pad\\nwear sensor commonly triggering a dashboard warning before a hard mileage\\nlimit is reached. Brake fluid is commonly flushed every 2 years regardless\\nof mileage, a fixed interval BMW does not vary with the condition-based\\nsystem since fluid degradation depends mainly on time and moisture, not\\ndistance.\",\"score\":2.3447422981262207},{\"chunk_id\":1,\"source\":\"BMW 3 Series Service Guide (Synthetic)\",\"section\":\"Oil and Filter Change\",\"text\":\"## Oil and Filter Change\\n\\nBMW's petrol and diesel engines in the 3 Series specify BMW Longlife-01 or\\nLL-04 full-synthetic oil. Rather than a fixed mileage, BMW's Condition\\nBased Service system commonly schedules an oil change somewhere between\\n16,000-24,000 km or 12-24 months based on driving style, with harder\\ndriving or frequent short trips shortening the interval automatically.\",\"score\":0.38519465923309326}]",
+        "role": "tool",
+        "tool_call_id": "call_1"
+      }
+    ],
+    "model": "replay",
+    "seed": 0,
+    "temperature": 0.0,
+    "tools": [
+      {
+        "function": {
+          "description": "Search the knowledge base for `query`.\n\nDelegates to `ctx.deps.kb` (a `KBSearchProvider` - `RepositoryKBSearchProvider`\nin production, wired in `routers/assistant.py`). Returns `[]` when no\nprovider is configured (kept for callers/tests that don't need KB\nbehaviour, mirroring Phase 5's stub) *or* when real retrieval ran but\nfound nothing that clears the refusal threshold - either way, an empty\nlist is what makes the Knowledge specialist say it has no documentation\nrather than fabricate an answer (see app.agents.specialists.knowledge).",
+          "name": "search_kb",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "content": "BMW's factory long-life coolant is commonly rated for around 4-6 years or 100,000-150,000 km, after which a full flush is recommended [1].",
+    "tool_calls": []
+  }
+}

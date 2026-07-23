@@ -199,6 +199,15 @@ def record_cassette(
     return path
 
 
+#: Every call site in this codebase already pins these two values
+#: (``classify_intent_text``, ``llm_client_model``'s defaults) - record mode
+#: enforces the same convention so a recording pass is reproducible: the
+#: same prompt always yields the same cassette key, forever, regardless of
+#: what a careless caller happened to pass in.
+RECORD_MODE_TEMPERATURE = 0.0
+RECORD_MODE_SEED = 0
+
+
 class GroqClient(LLMClient):
     """Live backend - calls Groq's chat completions API via the ``groq`` SDK.
 
@@ -206,10 +215,31 @@ class GroqClient(LLMClient):
     deployment with ``LLM_BACKEND=groq`` and a ``GROQ_API_KEY`` set. Groq's
     free tier is the only live LLM path in this project (see project-wide
     constraint: no paid LLM API is ever called anywhere in this codebase).
+
+    Record mode
+    -----------
+    Pass ``record_dir`` to turn this into a *recorder*: every live call is
+    still made for real, but its request+response is also written to a
+    cassette under ``record_dir`` via ``record_cassette`` - using the exact
+    same ``request_hash`` key ``ReplayClient`` looks up at replay time, so a
+    cassette recorded this way is immediately replayable offline with no
+    translation step. Record mode always pins ``temperature``/``seed`` to
+    ``RECORD_MODE_TEMPERATURE``/``RECORD_MODE_SEED`` (overriding whatever the
+    caller passed) so re-running a recording session reproduces the same
+    cassette keys/content rather than drifting. This is the mechanism
+    ``scripts/record_cassettes.py`` drives against a real Groq API key to
+    populate/refresh the committed cassettes in ``backend/cassettes/``.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, client: Any = None) -> None:
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        client: Any = None,
+        record_dir: Optional[Path | str] = None,
+    ) -> None:
         self._model = model or settings.GROQ_MODEL
+        self._record_dir = Path(record_dir) if record_dir else None
         if client is not None:
             self._client = client
         else:
@@ -227,6 +257,9 @@ class GroqClient(LLMClient):
         **params: Any,
     ) -> LLMResponse:
         import groq
+
+        if self._record_dir is not None:
+            temperature, seed = RECORD_MODE_TEMPERATURE, RECORD_MODE_SEED
 
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -252,7 +285,20 @@ class GroqClient(LLMClient):
             ToolCall(id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments or "{}"))
             for tc in (message.tool_calls or [])
         ]
-        return LLMResponse(content=message.content, tool_calls=tool_calls)
+        response = LLMResponse(content=message.content, tool_calls=tool_calls)
+
+        if self._record_dir is not None:
+            record_cassette(
+                self._record_dir,
+                self._model,
+                messages,
+                tools,
+                response,
+                temperature=temperature,
+                seed=seed,
+            )
+
+        return response
 
 
 def build_default_client() -> LLMClient:

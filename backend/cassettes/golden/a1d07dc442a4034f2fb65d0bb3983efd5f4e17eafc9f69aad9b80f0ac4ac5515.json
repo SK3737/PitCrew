@@ -1,0 +1,50 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You are PitCrew's knowledge specialist. Call search_kb with the user's question. If it returns no results, that means there is no supporting documentation for this question - say so plainly instead of guessing or fabricating an answer. If it returns hits, answer using ONLY what they say, and cite every fact you use with an inline [n] marker matching that hit's position in the results (the first hit is [1], the second is [2], and so on).",
+        "role": "system"
+      },
+      {
+        "content": "How often should I flush the coolant on a BMW 3 Series?",
+        "role": "user"
+      }
+    ],
+    "model": "replay",
+    "seed": 0,
+    "temperature": 0.0,
+    "tools": [
+      {
+        "function": {
+          "description": "Search the knowledge base for `query`.\n\nDelegates to `ctx.deps.kb` (a `KBSearchProvider` - `RepositoryKBSearchProvider`\nin production, wired in `routers/assistant.py`). Returns `[]` when no\nprovider is configured (kept for callers/tests that don't need KB\nbehaviour, mirroring Phase 5's stub) *or* when real retrieval ran but\nfound nothing that clears the refusal threshold - either way, an empty\nlist is what makes the Knowledge specialist say it has no documentation\nrather than fabricate an answer (see app.agents.specialists.knowledge).",
+          "name": "search_kb",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "content": null,
+    "tool_calls": [
+      {
+        "arguments": {
+          "query": "How often should I flush the coolant on a BMW 3 Series?"
+        },
+        "id": "call_1",
+        "name": "search_kb"
+      }
+    ]
+  }
+}
