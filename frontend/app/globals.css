@@ -27,10 +27,17 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  /* shadcn's generic "accent" slot is a subtle hover/selected fill, not the
+     brand accent - point it at the translucent tint so components never use
+     the bold periwinkle as a general-purpose background (the Midnight
+     Indigo --accent token below is reserved for sparse CTA/focus use). */
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
+  --color-accent: var(--accent-soft);
+  /* Likewise "muted" is a background slot in shadcn, but the Midnight Indigo
+     token of that name is a *text* tone - route each shadcn slot to the
+     token that actually matches its meaning instead of colliding on name. */
+  --color-muted-foreground: var(--muted);
+  --color-muted: var(--surface-2);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -48,73 +55,58 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+/*
+ * Midnight Indigo design tokens (verbatim - values must not be edited, and
+ * no light/alternate theme should be added; this is the only committed
+ * theme for PitCrew).
+ * --good/--warn/--crit are reserved status colors (service-due states, KPI
+ * health) - never reuse them for decorative or brand purposes elsewhere.
+ * --accent (#7C8CFF) is the one brand accent; use it sparingly (primary CTA,
+ * active nav, focus rings), not as a general-purpose fill color.
+ */
+:root{
+  --bg:#0A0B12; --surface:#12141C; --surface-2:#191C26; --raise:#202430;
+  --border:#262A36; --border-strong:#363C4C;
+  --ink:#E9EBF3; --muted:#8B90A3; --faint:#5A6072;
+  --accent:#7C8CFF; --accent-ink:#050714; --accent-soft:rgba(124,140,255,.14);
+  --good:#34D399; --good-soft:rgba(52,211,153,.13);
+  --warn:#FBBF24; --warn-soft:rgba(251,191,36,.13);
+  --crit:#F87171; --crit-soft:rgba(248,113,113,.13);
+  --radius:12px; --pad:20px; --gap:16px;
+  --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.35);
 }
+body{margin:0;background:var(--bg);color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+/* shadcn/ui semantic slots, wired to the Midnight Indigo tokens above. */
+:root {
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--ink);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-ink);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink);
+  --accent-foreground: var(--ink);
+  --destructive: var(--crit);
+  --input: var(--border-strong);
+  --ring: var(--accent);
+  --chart-1: var(--accent);
+  --chart-2: var(--good);
+  --chart-3: var(--warn);
+  --chart-4: var(--crit);
+  --chart-5: var(--faint);
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-ink);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
 }
 
 @layer base {

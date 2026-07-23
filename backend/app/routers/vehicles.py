@@ -17,10 +17,46 @@ from app.schemas.vehicle import (
     VehicleHistoryResponse,
     VehicleMetadata,
     VehiclePredictRequest,
+    VehicleSummary,
 )
 from app.services.predictor import predict
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
+
+
+@router.get(
+    "/",
+    response_model=list[VehicleSummary],
+    summary="List vehicles visible to the current user",
+)
+async def list_vehicles(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_permission("read_vehicles", "read_own_vehicles")),
+) -> list[VehicleSummary]:
+    """
+    Not in the original phase's route list - added because the dashboard
+    (Phase 4) has no way to discover which vehicles exist without it, and
+    the repository already had a `list()` method with nowhere to surface it.
+    Owner-scoped the same way GET /{vehicle_id}/history is: an "owner" only
+    ever sees vehicles whose `owner_id` matches them; every other role that
+    holds `read_vehicles` sees the full fleet.
+    """
+    vehicle_repo = VehicleRepository(session)
+    vehicles = await vehicle_repo.list()
+
+    if current_user.role == "owner":
+        vehicles = [v for v in vehicles if v.owner_id == current_user.id]
+
+    return [
+        VehicleSummary(
+            vehicle_id=v.id,
+            make=v.make,
+            vehicle_model=v.model,
+            year=v.year,
+            fuel_type=v.fuel_type,
+        )
+        for v in vehicles
+    ]
 
 
 def _compute_empirical_km_per_month(events: list[ServiceHistory]) -> float | None:

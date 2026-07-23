@@ -11,6 +11,16 @@ class VehicleMetadata(BaseModel):
     fuel_type: Optional[Literal["petrol", "diesel", "hybrid", "electric"]] = None
 
 
+class VehicleSummary(BaseModel):
+    """One row of GET /vehicles - just enough to list + link into a vehicle's detail."""
+
+    vehicle_id: str
+    make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    year: Optional[int] = None
+    fuel_type: Optional[str] = None
+
+
 class ServiceEventRequest(BaseModel):
     service_date: date = Field(..., description="Date the service was performed", examples=["2025-11-01"])
     odometer_km: float = Field(
