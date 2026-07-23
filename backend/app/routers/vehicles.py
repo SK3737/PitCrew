@@ -8,7 +8,10 @@ from app.db.session import get_session
 from app.models.service_history import ServiceHistory
 from app.models.user import User
 from app.repositories.predictions import PredictionRepository
-from app.repositories.service_history import ServiceHistoryRepository
+from app.repositories.service_history import (
+    ServiceHistoryRepository,
+    compute_empirical_km_per_month,
+)
 from app.repositories.vehicles import VehicleRepository
 from app.schemas.service import ServicePredictionResponse
 from app.schemas.vehicle import (
@@ -57,20 +60,6 @@ async def list_vehicles(
         )
         for v in vehicles
     ]
-
-
-def _compute_empirical_km_per_month(events: list[ServiceHistory]) -> float | None:
-    if len(events) < 2:
-        return None
-    total_km, total_months = 0.0, 0.0
-    for i in range(1, len(events)):
-        prev, curr = events[i - 1], events[i]
-        km_diff = curr.odo_km - prev.odo_km
-        months_diff = (curr.serviced_at - prev.serviced_at).days / 30.44
-        if months_diff > 0 and km_diff >= 0:
-            total_km     += km_diff
-            total_months += months_diff
-    return round(total_km / total_months, 1) if total_months else None
 
 
 def _to_event_record(event: ServiceHistory) -> ServiceEventRecord:
@@ -156,7 +145,7 @@ async def get_history(
         events=[_to_event_record(e) for e in events],
         last_service_date=last.serviced_at,
         last_service_km=last.odo_km,
-        empirical_km_per_month=_compute_empirical_km_per_month(events),
+        empirical_km_per_month=compute_empirical_km_per_month(events),
     )
 
 

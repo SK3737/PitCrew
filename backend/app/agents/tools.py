@@ -60,8 +60,13 @@ class RepositoryVehicleDataProvider:
     def __init__(self, session) -> None:
         # Imported lazily to avoid a hard dependency on SQLAlchemy for
         # callers (e.g. tests) that only ever construct a FakeVehicleDataProvider.
-        from app.repositories.service_history import ServiceHistoryRepository
+        from app.repositories.service_history import (
+            ServiceHistoryRepository,
+            compute_empirical_km_per_month,
+        )
         from app.repositories.vehicles import VehicleRepository
+
+        self._compute_empirical_km_per_month = compute_empirical_km_per_month
 
         self._history_repo = ServiceHistoryRepository(session)
         self._vehicle_repo = VehicleRepository(session)
@@ -72,15 +77,33 @@ class RepositoryVehicleDataProvider:
             return None
 
         vehicle = await self._vehicle_repo.get(vehicle_id)
-        months_driven = (date.today() - last.serviced_at).days / 30.44
+        months_driven = max((date.today() - last.serviced_at).days / 30.44, 0.0)
+
+        # The assistant's predict_service(vehicle_id) tool has no live
+        # odometer input the way POST /vehicles/{id}/predict does (that
+        # endpoint takes current_odometer_km directly from the caller), so
+        # there is no genuine "kms since last service" reading available
+        # here. Rather than feed a fabricated 0.0 into the real ML tiers as
+        # if it were an actual measurement, estimate it from the vehicle's
+        # own service-history cadence: km/month derived from the deltas
+        # between past service events (the same empirical estimate already
+        # surfaced on GET /vehicles/{id}/history), projected across the
+        # months elapsed since the last service. This is a genuine
+        # data-derived estimate, not a live reading - if there's not enough
+        # history to derive one (fewer than two service events), we fall
+        # back to 0.0, which is honestly what's known in that case.
+        events = await self._history_repo.list_for_vehicle(vehicle_id)
+        empirical_km_per_month = self._compute_empirical_km_per_month(events)
+        kms_driven = (
+            round(empirical_km_per_month * months_driven, 1)
+            if empirical_km_per_month is not None
+            else 0.0
+        )
 
         return VehicleServiceSnapshot(
             vehicle_id=vehicle_id,
-            months_driven=max(months_driven, 0.0),
-            # Absolute odometer reading isn't asked by the assistant, so we
-            # treat "kms since last service" as unknown (0) unless a caller
-            # of predict_service supplies it explicitly via current_odometer_km.
-            kms_driven=0.0,
+            months_driven=months_driven,
+            kms_driven=kms_driven,
             make=vehicle.make if vehicle else None,
             vehicle_model=vehicle.model if vehicle else None,
             year=vehicle.year if vehicle else None,

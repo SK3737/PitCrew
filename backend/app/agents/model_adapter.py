@@ -21,6 +21,7 @@ for exactly this reason (see ``app.agents.specialists`` docstrings).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from pydantic_ai.messages import (
@@ -114,7 +115,16 @@ def llm_client_model(
         tool_defs = list(agent_info.function_tools) + list(agent_info.output_tools)
         tools = [_tool_schema(t) for t in tool_defs] or None
 
-        response = llm_client.complete(
+        # llm_client.complete() is a synchronous call by contract (both
+        # ReplayClient and GroqClient are naturally sync - see llm_client.py).
+        # ReplayClient's implementation is a fast local file read, but
+        # GroqClient's makes a real blocking HTTP request; running it inline
+        # on this coroutine would block the FastAPI event loop for the
+        # duration of every live LLM call under LLM_BACKEND=groq, killing
+        # concurrency on /assistant/ask. asyncio.to_thread offloads the sync
+        # call to a worker thread without changing LLMClient's sync interface.
+        response = await asyncio.to_thread(
+            llm_client.complete,
             plain_messages,
             tools=tools,
             temperature=temperature,
