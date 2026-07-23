@@ -8,7 +8,6 @@ new route can't accidentally leak other owners' vehicles.
 """
 
 import uuid
-from datetime import date
 
 from app.db.session import async_session_factory
 from app.repositories.vehicles import VehicleRepository
