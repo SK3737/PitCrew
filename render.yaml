@@ -35,10 +35,13 @@ services:
     region: oregon
     healthCheckPath: /health
     autoDeploy: true
-    # Runs once per deploy, before it's promoted live - the natural home
-    # for Alembic migrations against Neon (see Makefile's `migrate` target,
-    # same command).
-    preDeployCommand: python -m alembic upgrade head
+    # Free tier doesn't support preDeployCommand (paid-tier-only hook), so
+    # migrations run as part of container start instead. `alembic upgrade
+    # head` is idempotent - a no-op once already at head - so re-running it
+    # on every deploy/wake-from-sleep is safe.
+    dockerCommand: >-
+      sh -c "python -m alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000"
     envVars:
       - key: DATABASE_URL
         sync: false # Neon Postgres connection string - set manually
