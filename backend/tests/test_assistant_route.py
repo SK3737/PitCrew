@@ -14,6 +14,8 @@ from __future__ import annotations
 import uuid
 
 import app.routers.assistant as assistant_router
+from app.agents.llm_client import GroqClient, ReplayClient
+from app.config import settings
 from tests.conftest import create_user_directly
 
 PASSWORD = "correct horse battery staple"
@@ -72,3 +74,49 @@ async def test_demo_role_can_ask_via_replay_permission(async_client, monkeypatch
     response = await async_client.post("/assistant/ask", json={"question": "hi"}, headers=headers)
 
     assert response.status_code == 200
+
+
+async def test_demo_role_is_forced_onto_replay_client_even_when_backend_is_groq(
+    async_client, monkeypatch
+):
+    """Finding-1 regression test: `use_assistant_replay` (demo) must always
+    be served via `ReplayClient`, regardless of the ambient `LLM_BACKEND`
+    setting - see `assistant_router._llm_client_for_role`. Before the fix,
+    both routes unconditionally called `build_default_client()`, which
+    would have handed a `demo` caller a live `GroqClient` here."""
+    monkeypatch.setattr(settings, "LLM_BACKEND", "groq")
+
+    captured: dict[str, object] = {}
+
+    async def _fake_ask(llm_client, deps, question, run_id=None):
+        captured["llm_client"] = llm_client
+        return {"route": "knowledge", "answer": "stub", "run_id": "r", "tool_results": {}, "citations": []}
+
+    monkeypatch.setattr(assistant_router, "ask", _fake_ask)
+
+    headers = await _login(async_client, role="demo")
+    response = await async_client.post("/assistant/ask", json={"question": "hi"}, headers=headers)
+
+    assert response.status_code == 200
+    assert isinstance(captured["llm_client"], ReplayClient)
+
+
+async def test_mechanic_role_honors_llm_backend_setting_when_set_to_groq(async_client, monkeypatch):
+    """Companion to the demo-role test above: a role holding the full
+    `use_assistant` permission (mechanic) is unaffected by the fix and
+    still gets whatever `LLM_BACKEND` says."""
+    monkeypatch.setattr(settings, "LLM_BACKEND", "groq")
+
+    captured: dict[str, object] = {}
+
+    async def _fake_ask(llm_client, deps, question, run_id=None):
+        captured["llm_client"] = llm_client
+        return {"route": "knowledge", "answer": "stub", "run_id": "r", "tool_results": {}, "citations": []}
+
+    monkeypatch.setattr(assistant_router, "ask", _fake_ask)
+
+    headers = await _login(async_client, role="mechanic")
+    response = await async_client.post("/assistant/ask", json={"question": "hi"}, headers=headers)
+
+    assert response.status_code == 200
+    assert isinstance(captured["llm_client"], GroqClient)

@@ -17,14 +17,31 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.llm_client import CassetteMiss, build_default_client
+from app.agents.llm_client import CassetteMiss, LLMClient, ReplayClient, build_default_client
 from app.agents.supervisor import ask, build_supervisor_graph
 from app.agents.tools import AgentDeps, RepositoryKBSearchProvider, RepositoryVehicleDataProvider
-from app.auth.rbac import require_permission
+from app.auth.rbac import ROLE_PERMISSIONS, require_permission
 from app.db.session import get_session
 from app.models.user import User
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
+
+
+def _llm_client_for_role(role: str) -> LLMClient:
+    """Pick the LLMClient for the authenticated user's role.
+
+    A role granted the full ``use_assistant`` permission (mechanic, admin)
+    gets whatever ``settings.LLM_BACKEND`` says (``build_default_client()``).
+    A role holding only ``use_assistant_replay`` (demo - the untrusted
+    public-facing role) is always forced onto ``ReplayClient``, regardless
+    of the ambient ``LLM_BACKEND`` setting. Without this, a future live
+    deploy (``LLM_BACKEND=groq``) would transparently give `demo` users
+    live Groq calls despite the permission name promising replay-only
+    isolation.
+    """
+    if "use_assistant" in ROLE_PERMISSIONS.get(role, frozenset()):
+        return build_default_client()
+    return ReplayClient()
 
 
 class AssistantAskRequest(BaseModel):
@@ -45,7 +62,7 @@ async def ask_assistant(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_permission("use_assistant", "use_assistant_replay")),
 ) -> AssistantAskResponse:
-    llm_client = build_default_client()
+    llm_client = _llm_client_for_role(current_user.role)
     deps = AgentDeps(
         vehicle_data=RepositoryVehicleDataProvider(session),
         kb=RepositoryKBSearchProvider(session),
@@ -182,7 +199,7 @@ async def stream_assistant(
     convenience for consumers that don't want to reconstruct the answer by
     concatenating `token` events themselves.
     """
-    llm_client = build_default_client()
+    llm_client = _llm_client_for_role(current_user.role)
     deps = AgentDeps(
         vehicle_data=RepositoryVehicleDataProvider(session),
         kb=RepositoryKBSearchProvider(session),

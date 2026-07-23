@@ -12,8 +12,6 @@ PERMISSIONS = frozenset(
         "run_predict",
         "use_assistant",
         "read_own_vehicles",
-        "manage_own",
-        "read_only",
         "use_assistant_replay",
     }
 )
@@ -21,8 +19,8 @@ PERMISSIONS = frozenset(
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": PERMISSIONS,
     "mechanic": frozenset({"read_vehicles", "write_service", "run_predict", "use_assistant"}),
-    "owner": frozenset({"read_own_vehicles", "manage_own"}),
-    "demo": frozenset({"read_only", "use_assistant_replay"}),
+    "owner": frozenset({"read_own_vehicles"}),
+    "demo": frozenset({"use_assistant_replay"}),
 }
 
 

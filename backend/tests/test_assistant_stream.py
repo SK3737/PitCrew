@@ -20,7 +20,8 @@ import uuid
 from pathlib import Path
 
 import app.routers.assistant as assistant_router
-from app.agents.llm_client import ReplayClient
+from app.agents.llm_client import GroqClient, ReplayClient
+from app.config import settings
 from app.rag.ingest import ingest_kb_directory
 from tests.conftest import create_user_directly
 
@@ -108,6 +109,61 @@ async def test_stream_emits_trace_token_sources_done_events_in_order(async_clien
     done_event = next(data for event, data in events if event == "done")
     assert done_event["route"] == "knowledge"
     assert done_event["answer"] == "Flush the coolant every 5 years."
+
+
+async def test_stream_demo_role_is_forced_onto_replay_client_even_when_backend_is_groq(
+    async_client, monkeypatch
+):
+    """Finding-1 regression test for the streaming sibling route: `demo`
+    (holds only `use_assistant_replay`) must always be served via
+    `ReplayClient`, regardless of the ambient `LLM_BACKEND` setting - see
+    `assistant_router._llm_client_for_role`. Before the fix this route
+    unconditionally called `build_default_client()`, which would have
+    handed a `demo` caller a live `GroqClient` here."""
+    monkeypatch.setattr(settings, "LLM_BACKEND", "groq")
+
+    captured: dict[str, object] = {}
+
+    class _StubCompiledGraph:
+        async def astream(self, initial, stream_mode="updates"):
+            yield {"knowledge": {"answer": "stub", "citations": [], "iterations": 1}}
+
+    def _fake_build_supervisor_graph(llm_client, deps):
+        captured["llm_client"] = llm_client
+        return _StubCompiledGraph()
+
+    monkeypatch.setattr(assistant_router, "build_supervisor_graph", _fake_build_supervisor_graph)
+
+    headers = await _login(async_client, role="demo")
+    response = await async_client.post("/assistant/stream", json={"question": "hi"}, headers=headers)
+
+    assert response.status_code == 200
+    assert isinstance(captured["llm_client"], ReplayClient)
+
+
+async def test_stream_mechanic_role_honors_llm_backend_setting_when_set_to_groq(async_client, monkeypatch):
+    """Companion to the demo-role test above: a role holding the full
+    `use_assistant` permission (mechanic) is unaffected by the fix and
+    still gets whatever `LLM_BACKEND` says."""
+    monkeypatch.setattr(settings, "LLM_BACKEND", "groq")
+
+    captured: dict[str, object] = {}
+
+    class _StubCompiledGraph:
+        async def astream(self, initial, stream_mode="updates"):
+            yield {"knowledge": {"answer": "stub", "citations": [], "iterations": 1}}
+
+    def _fake_build_supervisor_graph(llm_client, deps):
+        captured["llm_client"] = llm_client
+        return _StubCompiledGraph()
+
+    monkeypatch.setattr(assistant_router, "build_supervisor_graph", _fake_build_supervisor_graph)
+
+    headers = await _login(async_client, role="mechanic")
+    response = await async_client.post("/assistant/stream", json={"question": "hi"}, headers=headers)
+
+    assert response.status_code == 200
+    assert isinstance(captured["llm_client"], GroqClient)
 
 
 async def test_stream_off_script_question_emits_error_event_not_a_crash(async_client, monkeypatch):
