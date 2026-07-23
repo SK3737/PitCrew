@@ -3,9 +3,7 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
@@ -15,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app.models  # noqa: E402, F401 - registers all ORM models on Base.metadata
 from app.config import settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
+from app.db.session import _build_engine  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -76,11 +75,11 @@ async def run_async_migrations() -> None:
 
     """
 
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Reuses app.db.session's own engine builder (same sslmode->ssl
+    # translation needed for managed Postgres like Neon) instead of
+    # async_engine_from_config, which would hand the raw URL straight to
+    # asyncpg and hit the same sslmode parsing failure a second time.
+    connectable = _build_engine(settings.DATABASE_URL)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

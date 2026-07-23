@@ -32,7 +32,15 @@ pydantic-ai>=2.15
 groq
 langfuse
 
-# RAG: local CPU embeddings + reranking (no API, no GPU - see agents/embeddings.py)
+# RAG: local CPU embeddings + reranking (no API, no GPU - see agents/embeddings.py).
+# torch is pinned to the CPU-only wheel index *before* sentence-transformers
+# pulls it in transitively - without this, a fresh install on Linux (a real
+# Docker build, any CI runner) resolves torch's default PyPI wheel, which
+# bundles a dozen nvidia-cu* CUDA packages (~9.5GB) this project never uses
+# (verified: default resolution pulls 2.13.0 + nvidia-cudnn/cublas/cufft/etc;
+# this pin resolves to 2.13.0+cpu with zero nvidia-cu* packages).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 sentence-transformers
 pyyaml
 
