@@ -13,3 +13,5 @@ node_modules/
 frontend/out/
 .pytest_cache/
 cassettes/*.local
+backend/eval_runs/*.json
+backend/.deepeval/

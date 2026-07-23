@@ -5,10 +5,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/        app/
-COPY storage/    storage/
-COPY models/     models/
-COPY data/processed/ data/processed/
+COPY app/          app/
+COPY storage/      storage/
+COPY models/       models/
+COPY data/         data/
+COPY alembic/      alembic/
+COPY alembic.ini   alembic.ini
+COPY cassettes/    cassettes/
 
 EXPOSE 8000
 

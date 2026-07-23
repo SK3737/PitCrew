@@ -10,9 +10,13 @@ dev:
 test:
 	cd backend && python -m pytest
 
-# Run evaluation suite (Ragas/DeepEval + local judge). Wired up in a later phase.
+# Run evaluation suite (Ragas + DeepEval, judged via app.evals.judge_adapter
+# over LLMClient - LLM_BACKEND=replay by default, deterministic and offline;
+# set LLM_BACKEND=groq for a real/manual judge run against a live key).
+# Non-zero exit if either suite's scores/assertions fail - the CI gate.
 eval:
-	@echo "TODO: wire eval suite (later phase)"
+	cd backend && python -m app.evals.ragas_suite
+	cd backend && python -m app.evals.deepeval_suite
 
 # Run Alembic migrations against the compose DB.
 migrate:

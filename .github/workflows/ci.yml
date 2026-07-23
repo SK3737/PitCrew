@@ -1,0 +1,114 @@
+name: CI
+
+# Task 9.4. Every step below was run manually, in order, against this exact
+# repository state (see .superpowers/sdd/task-9-report.md for the literal
+# commands and their output) before this file was considered done - GitHub
+# Actions itself was never run, since this environment has no GitHub Actions
+# runner, but every command this workflow issues was individually verified
+# to pass locally.
+#
+# Project-wide constraint (see backend/app/agents/llm_client.py's own
+# docstring): no paid LLM API is ever called anywhere in this repo's own
+# tests/CI. Every step below runs under LLM_BACKEND=replay against
+# committed cassettes (backend/cassettes/) - no GROQ_API_KEY or other
+# provider secret is read by this workflow, and none needs to exist for it
+# to pass.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  LLM_BACKEND: replay
+  JWT_SECRET: ci-test-secret-do-not-use-in-prod
+  DATABASE_URL: postgresql+asyncpg://pitcrew:pitcrew@localhost:5432/pitcrew
+  TEST_DATABASE_URL: postgresql+asyncpg://pitcrew:pitcrew@localhost:5432/pitcrew_test
+  BACKEND_URL: http://localhost:8000
+  SESSION_SECRET: ci-test-session-secret-0000000000000000000000000000000000
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    # pgvector-enabled Postgres, matching docker-compose.yml's `db` service
+    # (same image, same credentials) - the KB migration's `CREATE EXTENSION
+    # vector` step (Phase 6) needs the extension available server-side.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pitcrew
+          POSTGRES_PASSWORD: pitcrew
+          POSTGRES_DB: pitcrew
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pitcrew -d pitcrew"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Lint backend (ruff)
+        run: ruff check backend
+
+      - name: Create the pytest-only test database
+        # backend/tests/conftest.py points a dedicated `pitcrew_test`
+        # database (never the `pitcrew` dev/e2e one) at this same server -
+        # see that file's own module docstring for why.
+        run: PGPASSWORD=pitcrew psql -h localhost -U pitcrew -d pitcrew -c "CREATE DATABASE pitcrew_test;"
+
+      - name: Run backend tests (replay mode, fully offline)
+        working-directory: backend
+        run: python -m pytest
+
+      - name: Run Alembic migrations (dev DB, backs the frontend e2e step)
+        working-directory: backend
+        run: python -m alembic upgrade head
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend (production build)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright's browser + OS dependencies
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Seed e2e fixtures (vehicles, mechanic user, KB ingest)
+        working-directory: backend
+        run: python ../frontend/e2e/seed.py
+
+      - name: Run frontend e2e (Playwright; starts the replay-mode backend + a production Next.js build itself)
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Run eval suites (Ragas + DeepEval, replay-mode judge) - required gate, fails the build on a score/assertion regression
+        working-directory: backend
+        run: |
+          python -m app.evals.ragas_suite
+          python -m app.evals.deepeval_suite

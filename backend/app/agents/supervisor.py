@@ -29,7 +29,7 @@ State
 specialist's tool results, the `iterations` counter the guardrails module
 checks every node visit against, and a `run_id` used to correlate the whole
 trajectory (and, if Langfuse keys are configured, its trace spans - see
-`app.agents.tracing`).
+`app.observability.langfuse`).
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from app.agents.specialists.diagnostics import run_diagnostics
 from app.agents.specialists.knowledge import run_knowledge
 from app.agents.specialists.scheduling import run_scheduling
 from app.agents.tools import AgentDeps
-from app.agents.tracing import trace_span
+from app.observability.langfuse import trace_span
 
 logger = logging.getLogger(__name__)
 

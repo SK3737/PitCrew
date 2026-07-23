@@ -1,0 +1,22 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "Classify the user's question into exactly one route. Respond with only that one word, lowercase, nothing else.\n- diagnostics: questions about when or whether a specific vehicle needs service, based on its mileage or history.\n- scheduling: requests to book, confirm, or cancel a service appointment.\n- knowledge: general questions about maintenance, procedures, or policy that aren't about one specific vehicle's due date or a booking.",
+        "role": "system"
+      },
+      {
+        "content": "How often should Honda Civic brake fluid be replaced?",
+        "role": "user"
+      }
+    ],
+    "model": "replay",
+    "seed": 0,
+    "temperature": 0.0,
+    "tools": []
+  },
+  "response": {
+    "content": "knowledge",
+    "tool_calls": []
+  }
+}

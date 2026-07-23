@@ -1,0 +1,66 @@
+## Task 9.5 - Render Blueprint for the FastAPI backend.
+##
+## NOT executed, deployed, or validated against a real Render account in
+## this environment (no Render account exists here - see this phase's
+## report, "What is out of scope"). Written as plausible, correct
+## infrastructure-as-code for a human to activate later by connecting this
+## repo to a new Render Blueprint. Locally verified instead:
+##   - `docker build -t pitcrew-backend ./backend` (the same Dockerfile this
+##     blueprint points at) builds successfully.
+##   - Every env var below matches a field `app.config.Settings` actually
+##     reads (see backend/app/config.py) - none invented.
+##
+## Postgres is Neon (external, managed outside this blueprint - per the
+## project's "Neon + Render + Vercel" plan), not a Render-managed Postgres
+## instance, so `DATABASE_URL` is `sync: false` (set manually in the Render
+## dashboard from the Neon connection string) rather than wired to a
+## `databases:` block here.
+##
+## Known risk (see task-9-report.md, "Concerns"): the image built from
+## `backend/Dockerfile` pulls in `torch`'s default CUDA/GPU wheel via
+## `sentence-transformers` (~9.5GB uncompressed) even though this project
+## only ever runs CPU inference (see app/agents/embeddings.py). `plan: free`
+## may not have enough build time/memory/disk for this image as currently
+## pinned - a future phase should pin torch's CPU-only wheel index in
+## backend/requirements.txt, or bump `plan` here, before a real deploy.
+services:
+  - type: web
+    name: pitcrew-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    # Runs once per deploy, before it's promoted live - the natural home
+    # for Alembic migrations against Neon (see Makefile's `migrate` target,
+    # same command).
+    preDeployCommand: python -m alembic upgrade head
+    envVars:
+      - key: DATABASE_URL
+        sync: false # Neon Postgres connection string - set manually
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_MINUTES
+        value: "15"
+      - key: REFRESH_TOKEN_DAYS
+        value: "14"
+      - key: LLM_BACKEND
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false # Groq free-tier key - set manually
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: EMBED_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: RERANK_MODEL
+        value: cross-encoder/ms-marco-MiniLM-L-6-v2
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false # blank until a human creates a Langfuse Cloud project - app.observability.langfuse fails open until then
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_HOST
+        value: https://cloud.langfuse.com
+      - key: CASSETTE_DIR
+        value: "" # blank in production - LLM_BACKEND=groq never reads it
