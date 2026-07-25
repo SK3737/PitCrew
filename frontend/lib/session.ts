@@ -51,16 +51,28 @@ async function decrypt(session: string | undefined): Promise<SessionPayload | nu
   }
 }
 
+// ponytail: Next.js only allows cookie writes from a Server Action, Route
+// Handler, or Middleware. dal.ts's authedRequest() calls updateSession()/
+// deleteSession() during a plain Server Component render (dashboard page)
+// when a token refresh happens mid-render - that write is a best-effort
+// extension of the session, not the auth check itself (verifySession()
+// re-validates independently on every request), so a render-context write
+// failing here is safe to swallow: the browser just keeps its prior cookie
+// and re-refreshes on the next real navigation.
 async function setSessionCookie(payload: SessionPayload): Promise<void> {
   const token = await encrypt(payload);
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-  });
+  try {
+    cookieStore.set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_MAX_AGE_SECONDS,
+    });
+  } catch {
+    // Not writable from this context (Server Component render) - ignore.
+  }
 }
 
 export async function createSession(payload: SessionPayload): Promise<void> {
@@ -74,7 +86,11 @@ export async function updateSession(payload: SessionPayload): Promise<void> {
 
 export async function deleteSession(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  try {
+    cookieStore.delete(SESSION_COOKIE_NAME);
+  } catch {
+    // Not writable from this context (Server Component render) - ignore.
+  }
 }
 
 /** Reads + decrypts the session cookie. Returns null if absent/invalid - callers decide what to do. */
