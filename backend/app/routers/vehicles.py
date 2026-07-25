@@ -207,8 +207,19 @@ async def predict_for_vehicle(
     payload: VehiclePredictRequest = ...,
     request: Request = ...,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_permission("run_predict")),
+    current_user: User = Depends(require_permission("run_predict", "read_own_vehicles")),
 ) -> ServicePredictionResponse:
+    vehicle_repo = VehicleRepository(session)
+    vehicle = await vehicle_repo.get(vehicle_id)
+
+    if current_user.role == "owner":
+        if vehicle is None or vehicle.owner_id != current_user.id:
+            # Same 403-not-404 scoping as GET /{vehicle_id}/history and
+            # POST /{vehicle_id}/service - an owner's dashboard needs to be
+            # able to predict for its own vehicles (the whole point of the
+            # dashboard), but never for anyone else's.
+            raise HTTPException(status_code=403, detail="Not permitted to run predictions for this vehicle")
+
     history_repo = ServiceHistoryRepository(session)
     last = await history_repo.get_last_for_vehicle(vehicle_id)
     if last is None:
@@ -232,8 +243,6 @@ async def predict_for_vehicle(
     if kms_driven < 0:
         raise HTTPException(status_code=422, detail="current_odometer_km cannot be less than the odometer at last service.")
 
-    vehicle_repo  = VehicleRepository(session)
-    vehicle       = await vehicle_repo.get(vehicle_id)
     last_svc_type = last.service_type
 
     response = predict(

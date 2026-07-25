@@ -137,3 +137,26 @@ async def test_owner_cannot_log_service_for_someone_elses_vehicle(async_client):
     )
 
     assert r.status_code == 403
+
+
+async def test_owner_can_predict_for_their_own_vehicle(async_client):
+    owner_id, headers = await _register_and_login(async_client, "owner")
+    await _seed_vehicle_owned_by("OWNED_V008", owner_id)
+
+    r = await async_client.post(
+        "/vehicles/OWNED_V008/predict", json={"current_odometer_km": 46000}, headers=headers
+    )
+
+    assert r.status_code == 200
+
+
+async def test_owner_cannot_predict_for_someone_elses_vehicle(async_client):
+    other_owner_id, _ = await _register_and_login(async_client, "owner")
+    await _seed_vehicle_owned_by("OWNED_V009", other_owner_id)
+
+    _, my_headers = await _register_and_login(async_client, "owner")
+    r = await async_client.post(
+        "/vehicles/OWNED_V009/predict", json={"current_odometer_km": 46000}, headers=my_headers
+    )
+
+    assert r.status_code == 403

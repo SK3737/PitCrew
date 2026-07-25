@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { backendRequest, BackendError, refreshBackendToken } from "@/lib/api";
 import { deleteSession, getSession, updateSession, type SessionPayload } from "@/lib/session";
@@ -208,12 +208,20 @@ const getDashboardRows = cache(async (): Promise<VehicleDashboardRow[]> => {
         return { ...base, ...empty };
       }
 
-      const prediction = await authedRequest<BackendPrediction>(`/vehicles/${vehicle.vehicle_id}/predict`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current_odometer_km: history.last_service_km }),
-      });
-      if (prediction === null) {
+      // A prediction failure for this one vehicle (permission edge case,
+      // transient backend error) must not take down the whole dashboard -
+      // degrade to "no prediction" instead. unstable_rethrow first so a
+      // genuine session-expired redirect from authedRequest still propagates
+      // instead of being swallowed here.
+      let prediction: BackendPrediction | null = null;
+      try {
+        prediction = await authedRequest<BackendPrediction>(`/vehicles/${vehicle.vehicle_id}/predict`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ current_odometer_km: history.last_service_km }),
+        });
+      } catch (error) {
+        unstable_rethrow(error);
         return { ...base, ...empty };
       }
 
