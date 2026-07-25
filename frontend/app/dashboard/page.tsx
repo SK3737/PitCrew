@@ -20,6 +20,9 @@ export default async function DashboardPage() {
           <p className="text-sm text-[var(--muted)]">Fleet service dashboard</p>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/dashboard/vehicles/new" className="text-sm text-[var(--muted)] hover:text-[var(--ink)]">
+            Add vehicle
+          </Link>
           <Link href="/assistant" className="text-sm text-[var(--muted)] hover:text-[var(--ink)]">
             Assistant
           </Link>

@@ -3,7 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 
-import { backendRequest, refreshBackendToken } from "@/lib/api";
+import { backendRequest, BackendError, refreshBackendToken } from "@/lib/api";
 import { deleteSession, getSession, updateSession, type SessionPayload } from "@/lib/session";
 
 /**
@@ -59,15 +59,58 @@ async function authedRequest<T>(
     redirect("/login");
   }
   if (status === 403) {
-    throw new Error("You do not have permission to view this data.");
+    throw new BackendError(403, "You do not have permission to view this data.");
   }
   if (status === 404 && options?.allow404) {
     return null;
   }
   if (data === null) {
-    throw new Error(`Request to ${path} failed with status ${status}.`);
+    throw new BackendError(status, `Request to ${path} failed with status ${status}.`);
   }
   return data;
+}
+
+export interface CreateVehicleInput {
+  vehicleId: string;
+  make?: string;
+  vehicleModel?: string;
+  year?: number;
+  fuelType?: string;
+}
+
+/** POST /vehicles/ - owners create only for themselves; the backend enforces that. */
+export async function createVehicle(input: CreateVehicleInput): Promise<void> {
+  await authedRequest("/vehicles/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      vehicle_id: input.vehicleId,
+      make: input.make ?? null,
+      vehicle_model: input.vehicleModel ?? null,
+      year: input.year ?? null,
+      fuel_type: input.fuelType ?? null,
+    }),
+  });
+}
+
+export interface LogServiceInput {
+  vehicleId: string;
+  serviceDate: string;
+  odometerKm: number;
+  serviceType?: string;
+}
+
+/** POST /vehicles/{id}/service - owners are backend-restricted to vehicles they own. */
+export async function logService(input: LogServiceInput): Promise<void> {
+  await authedRequest(`/vehicles/${encodeURIComponent(input.vehicleId)}/service`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      service_date: input.serviceDate,
+      odometer_km: input.odometerKm,
+      service_type: input.serviceType ?? null,
+    }),
+  });
 }
 
 // --- FastAPI response shapes (snake_case, as returned by the backend) -----

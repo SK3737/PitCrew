@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import type { VehicleDashboardRow } from "@/lib/dal";
 import { formatDate, formatDays, formatKm } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
@@ -18,13 +20,14 @@ export function VehiclesTable({ vehicles }: { vehicles: VehicleDashboardRow[] })
               <th className="py-2 pr-4 font-medium">Odometer</th>
               <th className="py-2 pr-4 font-medium">Next service due</th>
               <th className="py-2 pr-4 font-medium">Days left</th>
-              <th className="py-2 pr-0 font-medium">Status</th>
+              <th className="py-2 pr-4 font-medium">Status</th>
+              <th className="py-2 pr-0 font-medium" />
             </tr>
           </thead>
           <tbody>
             {vehicles.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-[var(--muted)]">
+                <td colSpan={7} className="py-6 text-center text-[var(--muted)]">
                   No vehicles found.
                 </td>
               </tr>
@@ -46,8 +49,16 @@ export function VehiclesTable({ vehicles }: { vehicles: VehicleDashboardRow[] })
                 <td className="py-3 pr-4 tabular-nums text-[var(--ink)]">
                   {formatDays(vehicle.predictedDaysUntilService)}
                 </td>
-                <td className="py-3 pr-0">
+                <td className="py-3 pr-4">
                   <StatusPill status={vehicle.status} />
+                </td>
+                <td className="py-3 pr-0 text-right">
+                  <Link
+                    href={`/dashboard/vehicles/${encodeURIComponent(vehicle.vehicleId)}/service`}
+                    className="text-sm text-[var(--accent)] hover:underline"
+                  >
+                    Log service
+                  </Link>
                 </td>
               </tr>
             ))}

@@ -81,3 +81,59 @@ async def test_mechanic_can_view_any_vehicle_regardless_of_owner(async_client):
     r = await async_client.get("/vehicles/OWNED_V003/history", headers=mechanic_headers)
 
     assert r.status_code == 200
+
+
+async def test_owner_can_create_their_own_vehicle(async_client):
+    owner_id, headers = await _register_and_login(async_client, "owner")
+
+    r = await async_client.post(
+        "/vehicles/", json={"vehicle_id": "OWNED_V004", "make": "Honda", "vehicle_model": "Civic"}, headers=headers
+    )
+
+    assert r.status_code == 201
+    assert r.json()["vehicle_id"] == "OWNED_V004"
+
+    async with async_session_factory() as session:
+        vehicle = await VehicleRepository(session).get("OWNED_V004")
+        assert vehicle.owner_id == owner_id
+
+
+async def test_owner_cannot_assign_a_created_vehicle_to_someone_else(async_client):
+    other_owner_id, _ = await _register_and_login(async_client, "owner")
+    my_owner_id, my_headers = await _register_and_login(async_client, "owner")
+
+    r = await async_client.post(
+        "/vehicles/", json={"vehicle_id": "OWNED_V005", "owner_id": other_owner_id}, headers=my_headers
+    )
+
+    assert r.status_code == 201
+    async with async_session_factory() as session:
+        vehicle = await VehicleRepository(session).get("OWNED_V005")
+        assert vehicle.owner_id == my_owner_id
+
+
+async def test_owner_can_log_service_for_their_own_vehicle(async_client):
+    owner_id, headers = await _register_and_login(async_client, "owner")
+    await _seed_vehicle_owned_by("OWNED_V006", owner_id)
+
+    r = await async_client.post(
+        "/vehicles/OWNED_V006/service",
+        json={"service_date": "2026-01-01", "odometer_km": 50000},
+        headers=headers,
+    )
+
+    assert r.status_code == 200
+
+
+async def test_owner_cannot_log_service_for_someone_elses_vehicle(async_client):
+    other_owner_id, _ = await _register_and_login(async_client, "owner")
+    await _seed_vehicle_owned_by("OWNED_V007", other_owner_id)
+
+    _, my_headers = await _register_and_login(async_client, "owner")
+    r = await async_client.post(
+        "/vehicles/OWNED_V007/service",
+        json={"service_date": "2026-01-01", "odometer_km": 50000},
+        headers=my_headers,
+    )
+
+    assert r.status_code == 403

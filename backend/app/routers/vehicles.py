@@ -17,6 +17,7 @@ from app.schemas.service import ServicePredictionResponse
 from app.schemas.vehicle import (
     ServiceEventRequest,
     ServiceEventRecord,
+    VehicleCreateRequest,
     VehicleHistoryResponse,
     VehicleMetadata,
     VehiclePredictRequest,
@@ -62,6 +63,46 @@ async def list_vehicles(
     ]
 
 
+@router.post(
+    "/",
+    response_model=VehicleSummary,
+    status_code=201,
+    summary="Add a vehicle",
+)
+async def create_vehicle(
+    payload: VehicleCreateRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_permission("write_service", "write_own_vehicles")),
+) -> VehicleSummary:
+    vehicle_repo = VehicleRepository(session)
+    if await vehicle_repo.get(payload.vehicle_id) is not None:
+        raise HTTPException(status_code=409, detail=f"Vehicle '{payload.vehicle_id}' already exists")
+
+    # An owner can only ever create vehicles for themselves - any owner_id
+    # they pass is ignored in favour of their own id, same trust boundary as
+    # the owner-scoping on GET /vehicles and GET /{id}/history.
+    owner_id = current_user.id if current_user.role == "owner" else payload.owner_id
+
+    vehicle = await vehicle_repo.create(
+        id=payload.vehicle_id,
+        make=payload.make,
+        model=payload.vehicle_model,
+        year=payload.year,
+        fuel_type=payload.fuel_type,
+        registered_at=payload.registered_at,
+        owner_id=owner_id,
+    )
+    await session.commit()
+
+    return VehicleSummary(
+        vehicle_id=vehicle.id,
+        make=vehicle.make,
+        vehicle_model=vehicle.model,
+        year=vehicle.year,
+        fuel_type=vehicle.fuel_type,
+    )
+
+
 def _to_event_record(event: ServiceHistory) -> ServiceEventRecord:
     return ServiceEventRecord(
         event_id=str(event.id),
@@ -80,10 +121,17 @@ async def record_service(
     vehicle_id: str = Path(..., description="Vehicle identifier", examples=["V001"]),
     payload: ServiceEventRequest = ...,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_permission("write_service")),
+    current_user: User = Depends(require_permission("write_service", "write_own_vehicles")),
 ) -> ServiceEventRecord:
     vehicle_repo = VehicleRepository(session)
     history_repo = ServiceHistoryRepository(session)
+
+    if current_user.role == "owner":
+        vehicle = await vehicle_repo.get(vehicle_id)
+        if vehicle is None or vehicle.owner_id != current_user.id:
+            # Same 403-not-404 scoping as GET /{vehicle_id}/history - an
+            # owner logging service is still confined to their own vehicles.
+            raise HTTPException(status_code=403, detail="Not permitted to log service for this vehicle")
 
     if payload.vehicle_metadata:
         meta = payload.vehicle_metadata.model_dump(exclude_none=True)

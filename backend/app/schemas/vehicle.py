@@ -11,6 +11,20 @@ class VehicleMetadata(BaseModel):
     fuel_type: Optional[Literal["petrol", "diesel", "hybrid", "electric"]] = None
 
 
+class VehicleCreateRequest(BaseModel):
+    vehicle_id: str = Field(..., min_length=1, description="External vehicle identifier (plate/VIN)", examples=["V001"])
+    make: Optional[str] = Field(None, examples=["Toyota"])
+    vehicle_model: Optional[str] = Field(None, examples=["Corolla"])
+    year: Optional[int] = Field(None, ge=1990, le=2030, examples=[2020])
+    fuel_type: Optional[Literal["petrol", "diesel", "hybrid", "electric"]] = None
+    registered_at: Optional[date] = Field(None, description="Date the vehicle was registered")
+    owner_id: Optional[int] = Field(
+        None,
+        description="Assign the vehicle to this owner. Ignored for callers with only "
+        "write_own_vehicles - they can only ever create vehicles for themselves.",
+    )
+
+
 class VehicleSummary(BaseModel):
     """One row of GET /vehicles - just enough to list + link into a vehicle's detail."""
 

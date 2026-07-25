@@ -12,6 +12,7 @@ PERMISSIONS = frozenset(
         "run_predict",
         "use_assistant",
         "read_own_vehicles",
+        "write_own_vehicles",
         "use_assistant_replay",
     }
 )
@@ -19,7 +20,10 @@ PERMISSIONS = frozenset(
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": PERMISSIONS,
     "mechanic": frozenset({"read_vehicles", "write_service", "run_predict", "use_assistant"}),
-    "owner": frozenset({"read_own_vehicles"}),
+    # "write_own_vehicles" lets an owner create/log-service only for vehicles
+    # they own - routes still enforce the ownership match themselves (same
+    # pattern as read_own_vehicles), this permission just gates route access.
+    "owner": frozenset({"read_own_vehicles", "write_own_vehicles"}),
     "demo": frozenset({"use_assistant_replay"}),
 }
 
